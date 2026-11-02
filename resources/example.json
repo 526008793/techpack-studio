@@ -1,0 +1,566 @@
+{
+  "meta": {
+    "styleNumber": "P4541",
+    "styleName": "RANDY",
+    "descriptionZh": "男式绒感针织束脚慢跑裤",
+    "descriptionEn": "PLUSH JOGGER WITH CINCHED ANKLE",
+    "brand": "UFC",
+    "customer": "DEVELOPMENT",
+    "designer": "ALEX",
+    "technical": "MORGAN",
+    "reference": "J4472 TOVA",
+    "season": "FA27",
+    "sourceDate": "2026-10-29",
+    "sampleSize": "M",
+    "sizeScale": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL"
+    ],
+    "unit": "inch",
+    "factory": null,
+    "orderNumber": null,
+    "merchandiser": null,
+    "issueDate": null,
+    "dueDate": null,
+    "sampleQuantity": null
+  },
+  "materials": [
+    {
+      "kind": "fabric",
+      "nameZh": "面料1",
+      "nameEn": "FABRIC 1",
+      "specZh": "绒感单面针织；54%涤纶 / 39%粘胶 / 7%氨纶；348 GSM",
+      "specEn": "PLUSH JERSEY KNIT; 54% POLY / 39% VISCOSE / 7% ELASTANE; 348 GSM",
+      "colors": [
+        "RAISIN 19-1606 TCX\n葡萄干色"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "大身",
+      "placementEn": "BODY",
+      "notesZh": "PDF p.2",
+      "notesEn": null
+    },
+    {
+      "kind": "fabric",
+      "nameZh": "面料2",
+      "nameEn": "FABRIC 2",
+      "specZh": "CVC单面针织；60%棉 / 40%涤纶；160 GSM",
+      "specEn": "CVC JERSEY; 60% COTTON / 40% POLYESTER; 160 GSM",
+      "colors": [
+        "EGRET 11-0103 TCX\n鹭白色"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "包芯嵌条",
+      "placementEn": "CORDED PIPING",
+      "notesZh": "嵌条宽1/8英寸 / 1/8 inch",
+      "notesEn": null
+    },
+    {
+      "kind": "fabric",
+      "nameZh": "面料3",
+      "nameEn": "FABRIC 3",
+      "specZh": "CVC单面针织；60%棉 / 40%涤纶；160 GSM",
+      "specEn": "CVC JERSEY; 60% COTTON / 40% POLYESTER; 160 GSM",
+      "colors": [
+        "RAISIN 19-1606 TCX\n葡萄干色"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "袋布",
+      "placementEn": "POCKET BAGS",
+      "notesZh": "PDF p.2",
+      "notesEn": null
+    },
+    {
+      "kind": "graphic",
+      "nameZh": "绣章",
+      "nameEn": "GRAPHICS",
+      "specZh": "刺绣贴章",
+      "specEn": "EMBROIDERY PATCH",
+      "colors": [],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "穿着者左口袋下方",
+      "placementEn": "BELOW WEARER'S LEFT POCKET",
+      "notesZh": "具体尺寸未提供 / SIZE TBC",
+      "notesEn": null
+    },
+    {
+      "kind": "trim",
+      "nameZh": "缝纫线",
+      "nameEn": "THREAD",
+      "specZh": "3股T-80哑光线，8针/英寸",
+      "specEn": "3 PLY T-80 MATTE FINISH, 8 SPI",
+      "colors": [
+        "RAISIN 19-1606 TCX"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "全身",
+      "placementEn": "ALL OVER",
+      "notesZh": null,
+      "notesEn": null
+    },
+    {
+      "kind": "trim",
+      "nameZh": "腰头橡筋",
+      "nameEn": "ELASTIC",
+      "specZh": "2英寸宽",
+      "specEn": "2 inch ELASTIC",
+      "colors": [
+        "黑色 / BLACK"
+      ],
+      "quantity": 1,
+      "unitZh": "条",
+      "unitEn": "PC",
+      "placementZh": "腰头",
+      "placementEn": "WAISTBAND",
+      "notesZh": null,
+      "notesEn": null
+    },
+    {
+      "kind": "trim",
+      "nameZh": "脚口橡筋",
+      "nameEn": "ELASTIC",
+      "specZh": "1英寸宽",
+      "specEn": "1 inch ELASTIC",
+      "colors": [
+        "黑色 / BLACK"
+      ],
+      "quantity": 2,
+      "unitZh": "条",
+      "unitEn": "PCS",
+      "placementZh": "脚口",
+      "placementEn": "ANKLE",
+      "notesZh": null,
+      "notesEn": null
+    },
+    {
+      "kind": "trim",
+      "nameZh": "抽绳",
+      "nameEn": "DRAWCORD",
+      "specZh": "3/8英寸扁编织抽绳，硅胶浸胶绳头",
+      "specEn": "3/8 inch FLAT BRAIDED DRAWCORD WITH SILICONE DIPPED AGLETS",
+      "colors": [
+        "ANTHRACITE 19-4007 TCX\n炭黑色"
+      ],
+      "quantity": 1,
+      "unitZh": "条",
+      "unitEn": "PC",
+      "placementZh": "腰头",
+      "placementEn": "WAISTBAND",
+      "notesZh": "总长56英寸 / TOTAL 56 inch",
+      "notesEn": null
+    },
+    {
+      "kind": "trim",
+      "nameZh": "绳头",
+      "nameEn": "AGLET",
+      "specZh": "硅胶浸胶绳头",
+      "specEn": "SILICONE DIPPED AGLET",
+      "colors": [
+        "ANTHRACITE 19-4007 TCX"
+      ],
+      "quantity": 2,
+      "unitZh": "个",
+      "unitEn": "PCS",
+      "placementZh": "抽绳两端",
+      "placementEn": "DRAWCORD",
+      "notesZh": null,
+      "notesEn": null
+    },
+    {
+      "kind": "label",
+      "nameZh": "主唛",
+      "nameEn": "MAIN LABEL",
+      "specZh": "UFC织唛; UFC-ML-03",
+      "specEn": "UFC WOVEN MAIN LABEL; UFC-ML-03",
+      "colors": [
+        "黑底红字 / BLACK & RED"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "后中腰头缝",
+      "placementEn": "CB WB SEAM",
+      "notesZh": "本地采购 / LOCALLY SOURCED",
+      "notesEn": null
+    },
+    {
+      "kind": "label",
+      "nameZh": "尺码唛",
+      "nameEn": "SIZE LABEL",
+      "specZh": "UFC尺码唛; UFC-SL-05",
+      "specEn": "UFC SIZE LABEL; UFC-SL-05",
+      "colors": [
+        "黑色 / BLACK"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "后中腰头缝，主唛左侧",
+      "placementEn": "CB WB SEAM, LEFT OF MAIN LABEL",
+      "notesZh": "本地采购 / LOCALLY SOURCED",
+      "notesEn": null
+    },
+    {
+      "kind": "label",
+      "nameZh": "吊牌",
+      "nameEn": "HANGTAG",
+      "specZh": "UFC HANGTAG",
+      "specEn": "UFC HANGTAG",
+      "colors": [
+        "按参考图 / AS REFERENCE"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "待确认",
+      "placementEn": "TBC",
+      "notesZh": "指定JPATTON；由ATDN/JCCORP订购",
+      "notesEn": "NOMINATED: JPATTON; ORDER BY ATDN/JCCORP"
+    },
+    {
+      "kind": "label",
+      "nameZh": "洗水唛",
+      "nameEn": "CARE LABEL",
+      "specZh": "印花缎面洗水唛; UNI-4122-CL",
+      "specEn": "PRINTED SATIN CARE LABEL; UNI-4122-CL",
+      "colors": [
+        "按参考图 / AS REFERENCE"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "待确认",
+      "placementEn": "TBC",
+      "notesZh": "成分及洗护内容须测试后确认",
+      "notesEn": "FABRIC & CARE TO BE CONFIRMED WITH TESTING"
+    },
+    {
+      "kind": "label",
+      "nameZh": "追踪唛",
+      "nameEn": "TRACKING LABEL",
+      "specZh": "UNI-4106-TRK",
+      "specEn": "UNI-4106-TRK",
+      "colors": [
+        "白色TYVEK底，黑色字\nWHITE TYVEK PAPER / BLACK"
+      ],
+      "quantity": null,
+      "unitZh": null,
+      "unitEn": null,
+      "placementZh": "待确认",
+      "placementEn": "TBC",
+      "notesZh": "无黑色外框 / NO BLACK OUTLINE",
+      "notesEn": "工厂/船期/产地/批次/款号待确认 / DATA TBC"
+    }
+  ],
+  "measurements": [
+    {
+      "nameEn": "Waist Relaxed (Half)",
+      "nameZh": "腰围松量（半围）",
+      "value": 16,
+      "tolerance": 0.5,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Waist Extended (Half) (Waist on Pattern)",
+      "nameZh": "腰围拉量（半围，纸样腰围）",
+      "value": 20,
+      "tolerance": 0.5,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Hip Width (Half) 3 Point V Measurement",
+      "nameZh": "臀围（半围，三点V量）",
+      "value": 20.5,
+      "tolerance": 0.5,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Hip Position From TOW (Top Of Waist)",
+      "nameZh": "臀围位置（距腰顶）",
+      "value": 8,
+      "tolerance": 0,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Thigh @ 1 inch Below Crotch (Half)",
+      "nameZh": "大腿围（裆下1英寸，半围）",
+      "value": 12,
+      "tolerance": 0.375,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Knee @ Half Inseam (Half)",
+      "nameZh": "膝围（内缝一半处，半围）",
+      "value": 8.75,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Leg Opening Extended (Half) @ 1/2 inch Above Cuff Seam",
+      "nameZh": "脚口拉量（半围，脚口接缝上1/2英寸）",
+      "value": 7.5,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Leg Opening Relaxed (Half)",
+      "nameZh": "脚口松量（半围）",
+      "value": 5.25,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Inseam (Inc Cuff)",
+      "nameZh": "内缝长（含脚口）",
+      "value": 30.5,
+      "tolerance": 0.5,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Cuff Height",
+      "nameZh": "脚口高",
+      "value": 1,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Waistband Height",
+      "nameZh": "腰头高",
+      "value": 2,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Front Rise (Inc Waistband)",
+      "nameZh": "前浪（含腰头）",
+      "value": 12.5,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Back Rise (Inc Waistband)",
+      "nameZh": "后浪（含腰头）",
+      "value": 15.5,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Front Pocket Opening",
+      "nameZh": "前口袋开口长",
+      "value": 6.5,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Front Pocket Opening Placement Below Waistband Seam",
+      "nameZh": "前口袋开口距腰头接缝",
+      "value": 1,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Front Pocket Bag Depth From WB Seam",
+      "nameZh": "前袋布深（距腰头接缝）",
+      "value": 11,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Front Pocket Bag Width @ Widest",
+      "nameZh": "前袋布最宽处",
+      "value": 7,
+      "tolerance": 0.25,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Piping Placement Forward From Natural Sideseam At Waist",
+      "nameZh": "腰部前嵌条距自然侧缝",
+      "value": 2,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Piping Placement Forward From Natural Sideseam At Leg",
+      "nameZh": "腿部前嵌条距自然侧缝",
+      "value": 1,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Piping Placement Backward From Natural Sideseam At Waist",
+      "nameZh": "腰部后嵌条距自然侧缝",
+      "value": 2,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Piping Placement Backward From Natural Sideseam At Leg",
+      "nameZh": "腿部后嵌条距自然侧缝",
+      "value": 1,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Distance Between 2 Eyelets @ Center Front",
+      "nameZh": "前中两个绳眼之间距离",
+      "value": 1.5,
+      "tolerance": 0.125,
+      "sourceValue": null,
+      "notes": null
+    },
+    {
+      "nameEn": "Drawcord Total - Mens",
+      "nameZh": "男款抽绳总长",
+      "value": 56,
+      "tolerance": 1,
+      "sourceValue": null,
+      "notes": null
+    }
+  ],
+  "construction": [
+    {
+      "titleZh": "前后浪",
+      "titleEn": "FRONT & BACK RISE",
+      "detailZh": "双针鞍形线迹 / TWO NDL SADDLE STITCH",
+      "detailEn": "双针鞍形线迹 / TWO NDL SADDLE STITCH"
+    },
+    {
+      "titleZh": "腰头",
+      "titleEn": "FOLDED WAISTBAND",
+      "detailZh": "折叠成品高2英寸，内包橡筋；距腰顶3/8英寸单针；底部1/8英寸处两行单针，线距3/8英寸，形成抽绳通道。",
+      "detailEn": "2 inch high, encased elastic; single needle 3/8 inch from top; two rows single needle 1/8 inch from bottom, 3/8 inch apart; drawcord tunnel."
+    },
+    {
+      "titleZh": "抽绳",
+      "titleEn": "FLAT BRAIDED DRAWCORD",
+      "detailZh": "宽3/8英寸，锁眼出口，末端硅胶浸胶，后中固定。",
+      "detailEn": "3/8 inch; buttonhole exit; silicone dipped ends; tacked at CB."
+    },
+    {
+      "titleZh": "口袋",
+      "titleEn": "ON SEAM WELT POCKETS",
+      "detailZh": "侧缝嵌线袋，CVC针织袋布；1/4英寸单针边线，上下端打枣。",
+      "detailEn": "CVC jersey lined; 1/4 inch single needle edgestitch; bar tacks at top & bottom."
+    },
+    {
+      "titleZh": "嵌条",
+      "titleEn": "CORDED PIPING",
+      "detailZh": "成品宽1/8英寸；采用面料2，前后位置见尺寸表。",
+      "detailEn": "1/8 inch wide; FABRIC 2; front/back placements per measurement sheet."
+    },
+    {
+      "titleZh": "脚口",
+      "titleEn": "ELASTICATED SELF CUFF",
+      "detailZh": "本布脚口成品高1英寸，内包1英寸橡筋；翻折双针明线。",
+      "detailEn": "1 inch high self cuff with 1 inch encased elastic; turnback with double needle topstitch."
+    },
+    {
+      "titleZh": "绣章",
+      "titleEn": "EMBROIDERY PATCH",
+      "detailZh": "穿着者左口袋下方，图案见款式图；实际尺寸及颜色待确认。",
+      "detailEn": "Below wearer's left pocket; artwork per sketch; actual size & color TBC."
+    }
+  ],
+  "figures": [
+    {
+      "role": "appearance",
+      "page": 1,
+      "box": {
+        "x": 0.3952020202020202,
+        "y": 0.2908496732026144,
+        "width": 0.20454545454545456,
+        "height": 0.5588235294117647
+      },
+      "captionZh": "款式彩色图",
+      "captionEn": "appearance"
+    },
+    {
+      "role": "construction",
+      "page": 3,
+      "box": {
+        "x": 0.025252525252525252,
+        "y": 0.21241830065359477,
+        "width": 0.9444444444444444,
+        "height": 0.6862745098039216
+      },
+      "captionZh": "工艺图",
+      "captionEn": "construction"
+    },
+    {
+      "role": "trimReference",
+      "page": 5,
+      "box": {
+        "x": 0.08207070707070707,
+        "y": 0.35947712418300654,
+        "width": 0.7954545454545454,
+        "height": 0.5392156862745098
+      },
+      "captionZh": "抽绳和嵌条参考",
+      "captionEn": "trimReference"
+    },
+    {
+      "role": "inspiration",
+      "page": 6,
+      "box": {
+        "x": 0.20833333333333334,
+        "y": 0.35947712418300654,
+        "width": 0.49242424242424243,
+        "height": 0.5392156862745098
+      },
+      "captionZh": "款式参考照片",
+      "captionEn": "inspiration"
+    },
+    {
+      "role": "labels",
+      "page": 7,
+      "box": {
+        "x": 0.025252525252525252,
+        "y": 0.21241830065359477,
+        "width": 0.9444444444444444,
+        "height": 0.6862745098039216
+      },
+      "captionZh": "唛头参考图",
+      "captionEn": "labels"
+    }
+  ],
+  "missingItems": [
+    "订单号、打样数量和交期未提供",
+    "洗水唛内容为占位，须按本款成分及测试结果确认",
+    "追踪唛参考图中的生产资料不可直接沿用",
+    "绣章尺寸及具体定位距离待确认"
+  ]
+}

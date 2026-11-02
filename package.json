@@ -1,0 +1,92 @@
+{
+  "name": "techpack-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PDF服装资料转中英对照Excel制单",
+  "author": "Local Tools",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "format": "prettier --write src tests scripts/*.mjs *.ts package.json tsconfig.json",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "start": "electron-vite preview",
+    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "test:desktop": "npm run build && node scripts/smoke-desktop.mjs"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "jszip": "3.10.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.5.438",
+    "vue": "3.5.44",
+    "@types/node": "22.20.5",
+    "@vitejs/plugin-vue": "6.0.10",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "playwright-core": "1.64.1",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vue-tsc": "3.3.13"
+  },
+  "build": {
+    "appId": "local.techpack.studio",
+    "productName": "制单助手",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist/windows",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "toolsets": {
+      "nsis": "1.2.1"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signExecutable": false,
+      "icon": "build/icon.ico",
+      "artifactName": "TechPack-Studio-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "制单助手",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
