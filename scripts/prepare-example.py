@@ -1,7 +1,6 @@
 """Prepare the already-reviewed P4541 example from the working conversion data."""
 import json
 from pathlib import Path
-from PIL import Image, ImageDraw
 
 root=Path(__file__).resolve().parents[1]
 source=json.loads(Path('/tmp/p4541-randy/source-data.json').read_text())
@@ -40,13 +39,4 @@ for role,page,box,caption in [
     figures.append(dict(role=role,page=page,box=dict(x=x/792,y=y/612,width=w/792,height=h/612),captionZh=caption,captionEn=role))
 data=dict(meta=dict(styleNumber='P4541',styleName='RANDY',descriptionZh='男式绒感针织束脚慢跑裤',descriptionEn='PLUSH JOGGER WITH CINCHED ANKLE',brand='UFC',customer='DEVELOPMENT',designer='ALEX',technical='MORGAN',reference='J4472 TOVA',season='FA27',sourceDate='2026-10-29',sampleSize='M',sizeScale=['S','M','L','XL','XXL'],unit='inch',factory=None,orderNumber=None,merchandiser=None,issueDate=None,dueDate=None,sampleQuantity=None),materials=materials,measurements=measurements,construction=construction,figures=figures,missingItems=['订单号、打样数量和交期未提供','洗水唛内容为占位，须按本款成分及测试结果确认','追踪唛参考图中的生产资料不可直接沿用','绣章尺寸及具体定位距离待确认'])
 (root/'resources/example.json').write_text(json.dumps(data,ensure_ascii=False,indent=2))
-icon=Image.new('RGBA',(256,256),(39,95,80,255))
-d=ImageDraw.Draw(icon)
-d.rounded_rectangle((55,37,201,222),radius=11,fill='#f7f8ed')
-d.rectangle((76,69,180,92),fill='#c4d495')
-for y in [116,143,170,197]:
-    d.line((76,y,180,y),fill='#789574',width=5)
-for x in [114,151]:d.line((x,108,x,199),fill='#789574',width=4)
-icon.save(root/'build/icon.ico',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-icon.resize((1024,1024),Image.Resampling.LANCZOS).save(root/'build/icon.png')
-print('Prepared reviewed example and application icons.')
+print('Prepared reviewed example. Use scripts/generate-icon.py to rebuild icons.')

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg" x2=".25" y2="1"><stop stop-color="#1d5344"/><stop offset="1" stop-color="#0e2e2b"/></linearGradient></defs>
+<rect x="52" y="52" width="920" height="920" rx="214" fill="url(#bg)"/>
+<rect x="77" y="77" width="870" height="870" rx="192" fill="none" stroke="#cae0bb" stroke-opacity=".19" stroke-width="2"/>
+<g fill="#f8f8eb" transform="translate(13)"><path d="M 146,320 L 354,320 L 354,375 L 218,624 L 354,624 L 354,680 L 140,680 L 140,625 L 277,376 L 146,376 Z"/>
+<path d="M 408,320 L 466,320 L 466,468 L 548,468 L 548,320 L 606,320 L 606,680 L 548,680 L 548,532 L 466,532 L 466,680 L 408,680 Z"/>
+<path d="M 660,320 L 718,320 L 718,468 L 800,468 L 800,320 L 858,320 L 858,680 L 800,680 L 800,532 L 718,532 L 718,680 L 660,680 Z"/></g>
+<rect x="158" y="753" width="115" height="13" rx="6" fill="#d4b56b"/>
+<path d="M306 760H871" stroke="#accfb2" stroke-opacity=".33" stroke-width="2"/>
+</svg>

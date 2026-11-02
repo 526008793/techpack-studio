@@ -215,6 +215,7 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 740,
     title: "制单助手",
+    icon: path.join(resources, "app-icon.png"),
     backgroundColor: "#f5f5f0",
     autoHideMenuBar: true,
     webPreferences: {
@@ -253,6 +254,9 @@ else {
     }
   });
   app.whenReady().then(async () => {
+    // Match the installer shortcuts so Windows groups the taskbar under this app.
+    if (process.platform === "win32")
+      app.setAppUserModelId("local.techpack.studio");
     settings = new SettingsStore(app.getPath("userData"), safeStorage);
     try {
       await settings.load();

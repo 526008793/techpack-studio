@@ -138,22 +138,10 @@ strong {
   color: #7b897c;
 }
 .brand-icon {
-  width: 36px;
+  width: 40px;
   height: 40px;
-  background: #2a5c4c;
-  border-radius: 5px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  padding: 10px;
-}
-.brand-icon span {
-  height: 2px;
-  background: #d7e1c8;
-}
-.brand-icon span:last-child {
-  width: 65%;
+  display: block;
+  object-fit: contain;
 }
 .workflow-label {
   font-size: 10px;

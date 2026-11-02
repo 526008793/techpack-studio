@@ -14,6 +14,8 @@ import {
   type ApiSettings,
 } from "../../shared/model";
 import { readPdf, cropFigure, exportFigures, parseDimension } from "./pdf";
+import brandIconUrl from "../../../build/icon.png?url";
+import { version as appVersion } from "../../../package.json";
 
 const api = window.techpack;
 const step = ref(1),
@@ -318,7 +320,7 @@ onUnmounted(() => removeProgress?.());
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon"><span></span><span></span><span></span></div>
+        <img class="brand-icon" :src="brandIconUrl" alt="ZHH" />
         <div><strong>制单助手</strong><small>TECHPACK STUDIO</small></div>
       </div>
       <div class="workflow-label">制单流程</div>
@@ -345,7 +347,7 @@ onUnmounted(() => removeProgress?.());
         <button class="settings-link" @click="settingsOpen = true">
           <span>⚙</span> 模型与 API 设置
           <b v-if="settings.hasApiKey" class="connected-dot"></b></button
-        ><small>本地文件处理 · v1.0.0</small>
+        ><small>本地文件处理 · v{{ appVersion }}</small>
       </div>
     </aside>
 

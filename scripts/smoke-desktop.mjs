@@ -63,6 +63,22 @@ try {
     if (message.type() === "error") errors.push(message.text());
   });
   await page.getByRole("heading", { name: "开始一份新制单" }).waitFor();
+  await page.getByRole("img", { name: "ZHH", exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const image = document.querySelector(".brand-icon");
+    return image?.complete && image.naturalWidth === 1024;
+  });
+  const icon = await app.evaluate(({ app, nativeImage }) => ({
+    version: app.getVersion(),
+    empty: nativeImage
+      .createFromPath(app.getAppPath() + "/resources/app-icon.png")
+      .isEmpty(),
+  }));
+  assert.equal(icon.empty, false);
+  assert.match(
+    await page.locator(".sidebar-bottom").innerText(),
+    new RegExp(`v${icon.version.replaceAll(".", "\\.")}`),
+  );
   await page.screenshot({ path: path.join(output, "01-import.png") });
 
   await page

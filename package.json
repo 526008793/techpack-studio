@@ -1,6 +1,6 @@
 {
   "name": "techpack-studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "PDF服装资料转中英对照Excel制单",
   "author": "Local Tools",
@@ -15,7 +15,7 @@
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "start": "electron-vite preview",
-    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never && node scripts/verify-windows-icons.mjs",
     "test:desktop": "npm run build && node scripts/smoke-desktop.mjs"
   },
   "dependencies": {
@@ -78,9 +78,12 @@
       "perMachine": false,
       "allowElevation": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "制单助手",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
       "installerLanguages": [
         "zh_CN",
         "en_US"
