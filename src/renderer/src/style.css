@@ -208,13 +208,91 @@ strong {
   color: #7c8b76;
   font-weight: 600;
 }
-.sidebar-rule p {
+.rule-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rule-add {
+  border: 1px solid #cbd7c4;
+  border-radius: 5px;
+  background: #f7faf4;
+  color: #386748;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.rule-add:hover:not(:disabled) {
+  background: #dce8d4;
+}
+.rule-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 35vh;
+  overflow-y: auto;
+}
+.rule-list li {
   font-size: 11px;
   color: #71806b;
   display: flex;
   gap: 7px;
-  margin-top: 13px;
+  margin-top: 3px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   line-height: 1.5;
+  cursor: default;
+}
+.rule-list li.selected {
+  background: #dfead7;
+  border-color: #c5d5ba;
+}
+.rule-list li > span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.rule-editor {
+  min-width: 0;
+  min-height: 60px;
+  width: 100%;
+  padding: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.rule-hint {
+  display: block;
+  color: #89957f;
+  font-size: 9px;
+  margin-top: 10px;
+}
+.rule-context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 120px;
+  border: 1px solid #d5dece;
+  border-radius: 6px;
+  background: #fbfcf8;
+  box-shadow: 0 5px 20px #20312426;
+  padding: 4px;
+}
+.rule-context-menu button {
+  width: 100%;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  color: #9a4037;
+  padding: 8px 12px;
+}
+.rule-context-menu button:hover {
+  background: #f5e9e5;
 }
 .sidebar-rule i {
   font-style: normal;

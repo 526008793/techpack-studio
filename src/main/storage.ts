@@ -5,6 +5,7 @@ import {
   type ApiSettings,
   techPackSchema,
   type TechPack,
+  DEFAULT_TEMPLATE_RULES,
 } from "../shared/model";
 
 export interface Cipher {
@@ -16,7 +17,9 @@ const defaults: ApiSettings = {
   protocol: "responses",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-6.1-sol",
+  reasoningEffort: "xhigh",
   rememberKey: true,
+  templateRules: [...DEFAULT_TEMPLATE_RULES],
 };
 export class SettingsStore {
   private memoryKey = "";
@@ -34,7 +37,10 @@ export class SettingsStore {
         protocol: raw.protocol === "chat" ? "chat" : "responses",
         baseUrl: raw.baseUrl || defaults.baseUrl,
         model: raw.model || defaults.model,
+        // 旧版设置没有推理强度字段，升级后使用 xhigh。
+        reasoningEffort: raw.reasoningEffort || defaults.reasoningEffort,
         rememberKey: raw.rememberKey !== false,
+        templateRules: raw.templateRules ?? [...DEFAULT_TEMPLATE_RULES],
       };
       if (raw.encryptedKey && this.cipher.isEncryptionAvailable())
         this.memoryKey = this.cipher.decryptString(
@@ -62,7 +68,9 @@ export class SettingsStore {
       protocol: next.protocol,
       baseUrl: url.toString().replace(/\/$/, ""),
       model: next.model.trim(),
+      reasoningEffort: next.reasoningEffort,
       rememberKey: next.rememberKey,
+      templateRules: next.templateRules ?? [...DEFAULT_TEMPLATE_RULES],
     };
     const encryptedKey =
       this.memoryKey && next.rememberKey ? this.encrypt(this.memoryKey) : null;
@@ -92,6 +100,8 @@ export function cacheKey(pdfHash: string, settings: ApiSettings) {
         settings.baseUrl,
         settings.model,
         settings.protocol,
+        // 不同推理强度的识别结果分别缓存。
+        settings.reasoningEffort,
         "schema-1",
       ].join("\n"),
     )

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   emptyTechPack,
   normalizedMaterials,
   missingSummary,
   techPackSchema,
+  DEFAULT_TEMPLATE_RULES,
   type TechPack,
   type SelectedFile,
   type PdfPage,
@@ -41,6 +42,7 @@ const settings = ref<ApiSettings>({
   protocol: "responses",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-6.1-sol",
+  reasoningEffort: "xhigh",
   rememberKey: true,
 });
 const figurePreviews = ref<string[]>([]);
@@ -52,13 +54,17 @@ const tabs = [
   ["construction", "工艺要求"],
   ["figures", "图片参考"],
 ];
-const rules = [
-  "面料逐项分行，末尾补“衬”",
-  "绣章不标黄",
-  "客人意见页保留模板内容",
-  "风险评估会意见保留原文",
-  "每个工作表打印一张 A4",
-];
+const rules = computed(
+  () => settings.value.templateRules ?? DEFAULT_TEMPLATE_RULES,
+);
+const selectedRule = ref<number | null>(null),
+  editingRule = ref<number | null>(null),
+  ruleDraft = ref(""),
+  savingRules = ref(false),
+  ruleMenu = ref<{ index: number; x: number; y: number } | null>(null);
+const ruleRows = computed(() =>
+  editingRule.value === rules.value.length ? [...rules.value, ""] : rules.value,
+);
 const kindNames: Record<Material["kind"], string> = {
   fabric: "面料",
   interlining: "衬",
@@ -199,6 +205,7 @@ async function saveSettings() {
     try {
       const payload = {
         ...settings.value,
+        templateRules: [...rules.value],
         apiKey: clearKey.value ? "" : keyInput.value.trim() || undefined,
       };
       settings.value = await api.saveSettings(payload);
@@ -210,6 +217,56 @@ async function saveSettings() {
       savingSettings.value = false;
     }
   });
+}
+function editRule(index: number) {
+  if (savingRules.value || busy.value) return;
+  selectedRule.value = index;
+  editingRule.value = index;
+  ruleDraft.value = rules.value[index] ?? "";
+  ruleMenu.value = null;
+  void nextTick(() =>
+    document.querySelector<HTMLTextAreaElement>(".rule-editor")?.focus(),
+  );
+}
+async function saveRules(next: string[]) {
+  savingRules.value = true;
+  await action(async () => {
+    try {
+      // 只替换规则清单；沿用已保存的模型设置和主进程中的密钥。
+      settings.value = await api.saveSettings({
+        ...settings.value,
+        templateRules: next,
+      });
+    } finally {
+      savingRules.value = false;
+    }
+  });
+}
+async function commitRule() {
+  const index = editingRule.value;
+  if (index === null) return;
+  const text = ruleDraft.value.trim();
+  editingRule.value = null;
+  if (!text || rules.value[index] === text) return;
+  const next = [...rules.value];
+  next[index] = text;
+  await saveRules(next);
+}
+function openRuleMenu(event: MouseEvent, index: number) {
+  if (savingRules.value || busy.value || editingRule.value !== null) return;
+  selectedRule.value = index;
+  ruleMenu.value = {
+    index,
+    x: Math.min(event.clientX, window.innerWidth - 130),
+    y: Math.min(event.clientY, window.innerHeight - 55),
+  };
+}
+async function deleteRule() {
+  const index = ruleMenu.value?.index;
+  ruleMenu.value = null;
+  if (index === undefined || savingRules.value) return;
+  selectedRule.value = null;
+  await saveRules(rules.value.filter((_, i) => i !== index));
 }
 function addMaterial() {
   data.value.materials.push({
@@ -317,7 +374,11 @@ onUnmounted(() => removeProgress?.());
 </script>
 
 <template>
-  <div class="app-shell">
+  <div
+    class="app-shell"
+    @click="ruleMenu = null"
+    @keydown.esc="ruleMenu = null"
+  >
     <aside class="sidebar">
       <div class="brand">
         <img class="brand-icon" :src="brandIconUrl" alt="ZHH" />
@@ -340,8 +401,53 @@ onUnmounted(() => removeProgress?.());
         </button>
       </nav>
       <div class="sidebar-rule">
-        <span class="eyebrow">已保存的模板规则</span>
-        <p v-for="rule in rules" :key="rule"><i>✓</i>{{ rule }}</p>
+        <div class="rule-heading">
+          <span class="eyebrow">已保存的模板规则</span>
+          <button
+            class="rule-add"
+            aria-label="新增模板规则"
+            title="新增一行规则"
+            :disabled="busy || savingRules || editingRule !== null"
+            @click.stop="editRule(rules.length)"
+          >
+            ＋
+          </button>
+        </div>
+        <ul class="rule-list" aria-label="已保存的模板规则">
+          <li
+            v-for="(rule, index) in ruleRows"
+            :key="index"
+            :class="{
+              selected: selectedRule === index,
+              editing: editingRule === index,
+            }"
+            tabindex="0"
+            @click="selectedRule = index"
+            @dblclick="editRule(index)"
+            @keydown.enter.self.prevent="editRule(index)"
+            @contextmenu.prevent.stop="openRuleMenu($event, index)"
+          >
+            <i>✓</i>
+            <textarea
+              v-if="editingRule === index"
+              v-model="ruleDraft"
+              class="rule-editor"
+              aria-label="模板规则内容"
+              rows="3"
+              placeholder="输入规则，按 Enter 保存"
+              @blur="commitRule"
+              @keydown.enter.exact.stop.prevent="commitRule"
+              @keydown.esc.stop.prevent="editingRule = null"
+              @click.stop
+              @dblclick.stop
+              @contextmenu.stop
+            ></textarea>
+            <span v-else>{{ rule }}</span>
+          </li>
+        </ul>
+        <small class="rule-hint">{{
+          savingRules ? "正在保存…" : "＋新增 · 双击修改 · 右键删除"
+        }}</small>
       </div>
       <div class="sidebar-bottom">
         <button class="settings-link" @click="settingsOpen = true">
@@ -350,6 +456,17 @@ onUnmounted(() => removeProgress?.());
         ><small>本地文件处理 · v{{ appVersion }}</small>
       </div>
     </aside>
+
+    <div
+      v-if="ruleMenu"
+      class="rule-context-menu"
+      role="menu"
+      aria-label="模板规则操作"
+      :style="{ left: `${ruleMenu.x}px`, top: `${ruleMenu.y}px` }"
+      @click.stop
+    >
+      <button role="menuitem" @click="deleteRule">删除</button>
+    </div>
 
     <main class="main">
       <header class="topbar">
@@ -1167,6 +1284,17 @@ onUnmounted(() => removeProgress?.());
             placeholder="gpt-6.1-sol"
           /><small
             >需要支持图片输入；推荐使用支持结构化输出的模型。</small
+          ></label
+        ><label
+          >推理强度<select v-model="settings.reasoningEffort">
+            <option value="default">跟随服务默认</option>
+            <option value="low">low（低）</option>
+            <option value="medium">medium（中等）</option>
+            <option value="high">high（高）</option>
+            <option value="xhigh">xhigh（超高，默认）</option></select
+          ><small
+            >默认使用
+            xhigh。较高强度通常耗时更长、消耗更多，需要模型支持。</small
           ></label
         ><label
           >API Key<input

@@ -23,6 +23,7 @@ const server = http.createServer(async (req, res) => {
     assert.equal(req.url, "/v1/responses");
     assert.equal(req.headers.authorization, "Bearer local-test-only");
     assert.equal(body.store, false);
+    assert.deepEqual(body.reasoning, { effort: "xhigh" });
     assert.equal(
       body.input[1].content.filter((x) => x.type === "input_image").length,
       7,
@@ -81,10 +82,40 @@ try {
   );
   await page.screenshot({ path: path.join(output, "01-import.png") });
 
+  const ruleList = page.getByRole("list", { name: "已保存的模板规则" });
+  const initialRules = await page.evaluate(() =>
+    window.techpack.settings().then((value) => value.templateRules),
+  );
+  assert.equal(await ruleList.locator("li").count(), 5);
+  await page.getByRole("button", { name: "新增模板规则", exact: true }).click();
+  await page.getByLabel("模板规则内容", { exact: true }).fill("测试新增规则");
+  await page.getByLabel("模板规则内容", { exact: true }).press("Enter");
+  await ruleList.getByText("测试新增规则", { exact: true }).waitFor();
+  await page.reload();
+  await ruleList.getByText("测试新增规则", { exact: true }).waitFor();
+  await ruleList.getByText("测试新增规则", { exact: true }).dblclick();
+  await page.getByLabel("模板规则内容", { exact: true }).fill("测试修改规则");
+  await page.getByLabel("模板规则内容", { exact: true }).press("Enter");
+  const editedRule = ruleList.getByText("测试修改规则", { exact: true });
+  await editedRule.waitFor();
+  await editedRule.click();
+  await editedRule.click({ button: "right" });
+  await page.getByRole("menu", { name: "模板规则操作" }).waitFor();
+  await page.screenshot({ path: path.join(output, "01-rules-menu.png") });
+  await page.getByRole("menuitem", { name: "删除", exact: true }).click();
+  await editedRule.waitFor({ state: "detached" });
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.techpack.settings().then((value) => value.templateRules),
+    ),
+    initialRules,
+  );
+
   await page
     .getByRole("button", { name: "模型与 API 设置", exact: false })
     .click();
   const settings = page.getByRole("dialog");
+  assert.equal(await settings.getByLabel("推理强度").inputValue(), "xhigh");
   await settings.getByLabel("API 基础地址").fill(`http://127.0.0.1:${port}/v1`);
   await settings.getByLabel("模型名称").fill("mock-vision");
   await settings.getByLabel("API Key", { exact: true }).fill("local-test-only");
@@ -95,6 +126,7 @@ try {
   const safeSettings = await page.evaluate(() => window.techpack.settings());
   assert.equal(safeSettings.apiKey, undefined);
   assert.equal(safeSettings.hasApiKey, true);
+  assert.equal(safeSettings.reasoningEffort, "xhigh");
   await app.evaluate(
     ({ dialog }, file) => {
       dialog.showOpenDialog = async () => ({

@@ -101,9 +101,11 @@ export type ApiSettings = {
   protocol: "responses" | "chat";
   baseUrl: string;
   model: string;
+  reasoningEffort: "default" | "low" | "medium" | "high" | "xhigh";
   apiKey?: string;
   hasApiKey?: boolean;
   rememberKey: boolean;
+  templateRules?: string[];
 };
 export type PdfPage = {
   number: number;
@@ -133,6 +135,13 @@ export type ExportSummary = {
 export const TBC = "待确认 / TBC";
 export const RISK_OPINION =
   "风险评估会意见：【版师在制版前找业务要客户原始资料或样衣照片，参考清晰图片做样】";
+export const DEFAULT_TEMPLATE_RULES = [
+  "面料逐项分行，末尾补“衬”",
+  "绣章不标黄",
+  "客人意见页保留模板内容",
+  "风险评估会意见保留原文",
+  "每个工作表打印一张 A4",
+];
 export function bilingual(
   zh: string | null | undefined,
   en: string | null | undefined,

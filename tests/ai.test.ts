@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { extractTechPack } from "../src/main/ai";
 import {
+  emptyTechPack,
   techPackSchema,
   type ApiSettings,
   type PdfPage,
@@ -11,6 +12,7 @@ const config: ApiSettings = {
   protocol: "responses",
   baseUrl: "https://example.invalid/v1",
   model: "test-model",
+  reasoningEffort: "xhigh",
   apiKey: "test-only-secret",
   rememberKey: false,
 };
@@ -57,8 +59,46 @@ test("Responses sends page images, strict schema and no persistent server storag
   );
   assert.equal(result.meta.styleNumber, "P4541");
   assert.equal(sent.store, false);
+  assert.deepEqual(sent.reasoning, { effort: "xhigh" });
+  assert.equal("reasoning_effort" in sent, false);
   assert.equal(sent.text.format.strict, true);
   assert.ok(sent.input[1].content.some((x: any) => x.type === "input_image"));
+});
+test("reasoning effort uses each API's parameter and can follow the service default", async () => {
+  const data = emptyTechPack();
+  for (const protocol of ["responses", "chat"] as const) {
+    for (const reasoningEffort of ["high", "xhigh", "default"] as const) {
+      let sent: any;
+      const fake = (async (url: any, options: any) => {
+        assert.equal(
+          String(url),
+          `https://example.invalid/v1/${protocol === "responses" ? "responses" : "chat/completions"}`,
+        );
+        sent = JSON.parse(options.body);
+        return Response.json(
+          protocol === "responses"
+            ? { output_text: JSON.stringify(data) }
+            : { choices: [{ message: { content: JSON.stringify(data) } }] },
+        );
+      }) as typeof fetch;
+      await extractTechPack(
+        { ...config, protocol, reasoningEffort },
+        pages,
+        new AbortController().signal,
+        fake,
+      );
+      if (reasoningEffort === "default") {
+        assert.equal("reasoning" in sent, false);
+        assert.equal("reasoning_effort" in sent, false);
+      } else if (protocol === "responses") {
+        assert.deepEqual(sent.reasoning, { effort: reasoningEffort });
+        assert.equal("reasoning_effort" in sent, false);
+      } else {
+        assert.equal(sent.reasoning_effort, reasoningEffort);
+        assert.equal("reasoning" in sent, false);
+      }
+    }
+  }
 });
 test("invalid JSON and missing measurement keys produce actionable errors", async () => {
   const fake = (async () =>

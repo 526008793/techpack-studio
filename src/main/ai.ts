@@ -84,6 +84,12 @@ export async function extractTechPack(
     (body.messages as { role: string; content: unknown }[])[0].content =
       EXTRACTION_PROMPT + "\n完整JSON Schema：\n" + JSON.stringify(schema);
   }
+  // 两种接口的推理参数不同；跟随服务默认时不发送该参数。
+  if (settings.reasoningEffort !== "default") {
+    if (settings.protocol === "responses")
+      body.reasoning = { effort: settings.reasoningEffort };
+    else body.reasoning_effort = settings.reasoningEffort;
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
