@@ -61,6 +61,98 @@ test("template profile, fabric separation and single added interlining", async (
   );
 });
 
+test("CAD translations are editable blue text boxes in both template engines; unrelated pages stay intact", async () => {
+  const data = await fixture(),
+    template = await fs.readFile(path.join(root, "resources/template.xlsx"));
+  data.construction = [
+    {
+      titleZh: "测试腰头",
+      titleEn: "TEST WAISTBAND",
+      detailZh: "腰头内包橡筋",
+      detailEn: "ENCASED ELASTIC",
+    },
+  ];
+  const image = {
+    role: "construction" as const,
+    data:
+      "data:image/png;base64," +
+      (await fs.readFile(path.join(root, "resources/app-icon.png"))).toString(
+        "base64",
+      ),
+    caption: "",
+    annotations: [
+      {
+        textZh: "腰头内包橡筋",
+        textEn: "ENCASED ELASTIC",
+        box: { x: 0.1, y: 0.2, width: 0.3, height: 0.1 },
+        fontSize: 22,
+      },
+      {
+        textZh: "压1/4英寸单针",
+        textEn: "1/4 INCH SINGLE NEEDLE",
+        box: { x: 0.5, y: 0.5, width: 0.3, height: 0.1 },
+        fontSize: 22,
+      },
+    ],
+  };
+  for (const generate of [generateWorkbook, generateTemplateWorkbook]) {
+    const output = await generate(template, data, [
+      image,
+      { ...image, role: "trimReference" as const },
+    ]);
+    const zip = await JSZip.loadAsync(output.buffer);
+    const drawings = await Promise.all(
+      Object.keys(zip.files)
+        .filter((f) => /^xl\/drawings\/tp-.*\.xml$/.test(f))
+        .map((f) => xml(zip, f)),
+    );
+    const labels = drawings.flatMap((doc) =>
+      Array.from(doc.getElementsByTagNameNS("*", "sp")),
+    );
+    assert.equal(labels.length, 4);
+    assert.ok(labels.some((sp) => sp.textContent?.includes("压1/4英寸单针")));
+    for (const doc of drawings) {
+      const ids = Array.from(doc.getElementsByTagNameNS("*", "cNvPr")).map(
+        (e) => e.getAttribute("id"),
+      );
+      assert.equal(
+        new Set(ids).size,
+        ids.length,
+        "pictures and labels must have unique drawing IDs",
+      );
+    }
+    for (const label of labels) {
+      assert.equal(
+        (label.parentNode as Element).localName,
+        "absoluteAnchor",
+        "labels and source images share absolute coordinates across spreadsheet renderers",
+      );
+      assert.equal(
+        label.getElementsByTagNameNS("*", "cNvSpPr")[0].getAttribute("txBox"),
+        "1",
+      );
+      assert.equal(
+        label.getElementsByTagNameNS("*", "srgbClr")[0].getAttribute("val"),
+        "0000CC",
+      );
+    }
+    const cad = cells(await xml(zip, "xl/worksheets/sheet3.xml"));
+    assert.ok(
+      ![...cad.values()].some((value) => value.includes("ENCASED ELASTIC")),
+      "fully annotated text is not repeated below CAD",
+    );
+    const original = await JSZip.loadAsync(template);
+    assert.deepEqual(
+      [...cells(await xml(zip, "xl/worksheets/sheet9.xml"))].filter(
+        ([, v]) => v,
+      ),
+      [...cells(await xml(original, "xl/worksheets/sheet9.xml"))].filter(
+        ([, v]) => v,
+      ),
+    );
+  }
+});
+
 test("export keeps all POM values, fractions, required guidance and original mail page", async () => {
   const data = await fixture(),
     template = await fs.readFile(path.join(root, "resources/template.xlsx"));

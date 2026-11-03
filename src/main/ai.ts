@@ -15,6 +15,7 @@ export const EXTRACTION_PROMPT = `你是服装技术资料制单员。逐页读�
 5. construction完整覆盖工艺要求，用titleZh/titleEn、detailZh/detailEn对应。标签参考图中“placeholder/reference only”的成分、产地、日期、款号、工厂等不能当作本款实际资料，在notes及missingItems标明。不得给固定风险评估会写虚构会议意见。
 6. figures找出款式彩色图appearance、工艺图construction、辅料参考trimReference、款式参考inspiration、唛头参考labels。page从1开始；box的x/y/width/height是相对整张页面的0~1坐标，从左上角起，裁掉重复页眉但保留该图完整说明。允许一个角色多张图片。不要把尺寸表当作款式图。
 7. 在missingItems列出资料真实缺失、模糊及冲突的关键项目。sourceDate按原始资料日期，不是当前时间；客户、品牌、设计、技术、参考款、季节分开。
+8. 每张figure的annotations逐条覆盖图中英文材料/工艺标注：textEn保留完整英文，textZh准确翻译（包括数字、单位与针法），相同工艺要求与construction.detailZh保持一致；sourceBox圈出该条英文文字，labelBox选择紧邻英文下方或旁边的空白，足够写完中文，不覆盖英文、服装轮廓、引线及其他中文。两个box均使用整张PDF页面的0~1坐标，与figure.box保持同一坐标系；不得把所有译文放在图下。优先参考提供的PDF文字位置。没有安全留白时labelBox=null，由本地程序检查邻近空白，不能编造位置。标注不得漏写在construction中已提取的图上要求；没有英文标注返回空数组。
 只输出符合schema的JSON，不输出Markdown。`;
 
 function endpoint(settings: ApiSettings) {
@@ -34,11 +35,26 @@ export async function extractTechPack(
 ): Promise<TechPack> {
   if (!settings.model.trim()) throw new Error("请先在设置中填写模型名称");
   if (!pages.length) throw new Error("PDF尚未读取完成");
-  const schema = z.toJSONSchema(techPackSchema);
+  const schema = z.toJSONSchema(techPackSchema, {
+    // 旧资料的默认空标注仅用于本地读取，模型输出仍须显式提供该字段。
+    override: ({ jsonSchema }) => {
+      delete jsonSchema.default;
+    },
+  });
   delete schema.$schema;
   const text = pages
     .map(
-      (p) => `=== PDF PAGE ${p.number} (${p.width}×${p.height}) ===\n${p.text}`,
+      (p) =>
+        `=== PDF PAGE ${p.number} (${p.width}×${p.height}) ===\n${p.text}` +
+        (p.textBlocks?.length
+          ? "\nPDF文字位置（左、上、宽、高，整页0~1）：\n" +
+            p.textBlocks
+              .map(
+                (b) =>
+                  `[${[b.box.x, b.box.y, b.box.width, b.box.height].map((n) => n.toFixed(4)).join(",")}] ${b.text}`,
+              )
+              .join("\n")
+          : ""),
     )
     .join("\n\n");
   let body: Record<string, unknown>;

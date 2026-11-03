@@ -16,7 +16,13 @@ import {
   type TechPack,
   type Material,
   type FigureImage,
+  type PlacedAnnotation,
 } from "../shared/model";
+import {
+  annotationWarnings,
+  remainingConstruction,
+  unplacedAnnotationRows,
+} from "../shared/cad-annotations";
 import {
   normalizeLabel,
   scalarField,
@@ -318,6 +324,7 @@ class Sheet {
     address: string,
     maxWidth: number,
     maxHeight: number,
+    annotations: PlacedAnnotation[] = [],
   ) {
     const bytes = Buffer.from(data.split(",")[1] || "", "base64");
     if (!bytes.length) return;
@@ -397,20 +404,57 @@ class Sheet {
         REL,
       ),
     );
-    const anchor = node(drawing, "xdr:oneCellAnchor", {}, DRAW),
-      from = node(drawing, "xdr:from", {}, DRAW),
-      position = splitAddress(address);
-    for (const [key, value] of Object.entries({
-      col: position.col - 1,
-      colOff: 47625,
-      row: position.row - 1,
-      rowOff: 47625,
-    })) {
-      const child = node(drawing, "xdr:" + key, {}, DRAW);
-      child.appendChild(drawing.createTextNode(String(value)));
-      from.appendChild(child);
+    const position = splitAddress(address);
+    const originX =
+      5 +
+      Array.from({ length: position.col - 1 }, (_, i) =>
+        this.width(i + 1),
+      ).reduce((a, b) => a + b, 0);
+    const originY =
+      5 +
+      Array.from(
+        { length: position.row - 1 },
+        (_, i) =>
+          (Number(
+            this.row(i + 1).getAttribute("ht") ||
+              elements(this.doc, "sheetFormatPr")[0]?.getAttribute(
+                "defaultRowHeight",
+              ) ||
+              15,
+          ) *
+            4) /
+          3,
+      ).reduce((a, b) => a + b, 0);
+    // 带标注的底图与文字统一使用标准绝对锚点，避免列宽换算差异或越界单元格偏移。
+    const anchor = node(
+      drawing,
+      annotations.length ? "xdr:absoluteAnchor" : "xdr:oneCellAnchor",
+      {},
+      DRAW,
+    );
+    if (annotations.length) {
+      anchor.appendChild(
+        node(
+          drawing,
+          "xdr:pos",
+          { x: Math.round(originX * 9525), y: Math.round(originY * 9525) },
+          DRAW,
+        ),
+      );
+    } else {
+      const from = node(drawing, "xdr:from", {}, DRAW);
+      for (const [key, value] of Object.entries({
+        col: position.col - 1,
+        colOff: 47625,
+        row: position.row - 1,
+        rowOff: 47625,
+      })) {
+        const child = node(drawing, "xdr:" + key, {}, DRAW);
+        child.appendChild(drawing.createTextNode(String(value)));
+        from.appendChild(child);
+      }
+      anchor.appendChild(from);
     }
-    anchor.appendChild(from);
     const w = Math.round(dim.width * scale * 9525),
       h = Math.round(dim.height * scale * 9525);
     anchor.appendChild(node(drawing, "xdr:ext", { cx: w, cy: h }, DRAW));
@@ -420,7 +464,16 @@ class Sheet {
       node(
         drawing,
         "xdr:cNvPr",
-        { id: elements(drawing, "pic").length + 100, name: imageName },
+        {
+          id:
+            Math.max(
+              0,
+              ...elements(drawing, "cNvPr").map((n) =>
+                Number(n.getAttribute("id")),
+              ),
+            ) + 1,
+          name: imageName,
+        },
         DRAW,
       ),
     );
@@ -446,6 +499,129 @@ class Sheet {
     anchor.appendChild(pic);
     anchor.appendChild(node(drawing, "xdr:clientData", {}, DRAW));
     drawing.documentElement!.appendChild(anchor);
+    // 中文保持独立 DrawingML 文本框，随图片同比例定位，Excel/WPS 中可修改和拖动。
+    for (const [index, annotation] of annotations.entries()) {
+      const labelAnchor = node(drawing, "xdr:absoluteAnchor", {}, DRAW);
+      labelAnchor.appendChild(
+        node(
+          drawing,
+          "xdr:pos",
+          {
+            x: Math.round(
+              (originX + annotation.box.x * dim.width * scale) * 9525,
+            ),
+            y: Math.round(
+              (originY + annotation.box.y * dim.height * scale) * 9525,
+            ),
+          },
+          DRAW,
+        ),
+      );
+      const labelWidth = Math.round(annotation.box.width * w),
+        labelHeight = Math.round(annotation.box.height * h);
+      labelAnchor.appendChild(
+        node(drawing, "xdr:ext", { cx: labelWidth, cy: labelHeight }, DRAW),
+      );
+      const sp = node(drawing, "xdr:sp", {}, DRAW),
+        nonVisual = node(drawing, "xdr:nvSpPr", {}, DRAW);
+      const id =
+        Math.max(
+          0,
+          ...elements(drawing, "cNvPr").map((n) =>
+            Number(n.getAttribute("id")),
+          ),
+        ) + 1;
+      nonVisual.appendChild(
+        node(
+          drawing,
+          "xdr:cNvPr",
+          { id, name: `中文标注 ${index + 1}`, descr: annotation.textEn },
+          DRAW,
+        ),
+      );
+      nonVisual.appendChild(node(drawing, "xdr:cNvSpPr", { txBox: 1 }, DRAW));
+      sp.appendChild(nonVisual);
+      const properties = node(drawing, "xdr:spPr", {}, DRAW),
+        transform = node(drawing, "a:xfrm", {}, A);
+      transform.appendChild(node(drawing, "a:off", { x: 0, y: 0 }, A));
+      transform.appendChild(
+        node(drawing, "a:ext", { cx: labelWidth, cy: labelHeight }, A),
+      );
+      properties.appendChild(transform);
+      const geometry = node(drawing, "a:prstGeom", { prst: "rect" }, A);
+      geometry.appendChild(node(drawing, "a:avLst", {}, A));
+      properties.appendChild(geometry);
+      properties.appendChild(node(drawing, "a:noFill", {}, A));
+      const line = node(drawing, "a:ln", {}, A);
+      line.appendChild(node(drawing, "a:noFill", {}, A));
+      properties.appendChild(line);
+      sp.appendChild(properties);
+      const body = node(drawing, "xdr:txBody", {}, DRAW);
+      const inset = Math.round(2 * scale * 9525);
+      const bodyProperties = node(
+        drawing,
+        "a:bodyPr",
+        {
+          wrap: "none",
+          lIns: inset,
+          rIns: inset,
+          tIns: inset,
+          bIns: inset,
+          anchor: "t",
+        },
+        A,
+      );
+      bodyProperties.appendChild(node(drawing, "a:noAutofit", {}, A));
+      body.appendChild(bodyProperties);
+      body.appendChild(node(drawing, "a:lstStyle", {}, A));
+      const size = Math.round(annotation.fontSize * scale * 75);
+      for (const textLine of annotation.textZh.split("\n")) {
+        const paragraph = node(drawing, "a:p", {}, A),
+          paragraphProperties = node(drawing, "a:pPr", {}, A);
+        const spacing = node(drawing, "a:lnSpc", {}, A);
+        spacing.appendChild(
+          node(drawing, "a:spcPts", { val: Math.round(size * 1.25) }, A),
+        );
+        paragraphProperties.appendChild(spacing);
+        paragraph.appendChild(paragraphProperties);
+        const run = node(drawing, "a:r", {}, A),
+          runProperties = node(
+            drawing,
+            "a:rPr",
+            { lang: "zh-CN", sz: size },
+            A,
+          );
+        const fillColor = node(drawing, "a:solidFill", {}, A);
+        fillColor.appendChild(node(drawing, "a:srgbClr", { val: "0000CC" }, A));
+        runProperties.appendChild(fillColor);
+        runProperties.appendChild(
+          node(drawing, "a:latin", { typeface: "Microsoft YaHei" }, A),
+        );
+        runProperties.appendChild(
+          node(drawing, "a:ea", { typeface: "Microsoft YaHei" }, A),
+        );
+        run.appendChild(runProperties);
+        const text = node(drawing, "a:t", {}, A);
+        text.appendChild(drawing.createTextNode(textLine));
+        run.appendChild(text);
+        paragraph.appendChild(run);
+        paragraph.appendChild(
+          node(drawing, "a:endParaRPr", { lang: "zh-CN", sz: size }, A),
+        );
+        body.appendChild(paragraph);
+      }
+      sp.appendChild(body);
+      labelAnchor.appendChild(sp);
+      labelAnchor.appendChild(
+        node(
+          drawing,
+          "xdr:clientData",
+          { fPrintsWithSheet: 1, fLocksWithSheet: 0 },
+          DRAW,
+        ),
+      );
+      drawing.documentElement!.appendChild(labelAnchor);
+    }
     this.book.saveXml(relFile, rels);
     this.book.saveXml(drawingFile, drawing);
     this.book.saveXml(drawingRelsFile, drawingRels);
@@ -1250,13 +1426,14 @@ export async function generateWorkbook(
         address,
         paired ? 420 : 860,
         selected.length > 2 ? 250 : 530,
+        image.annotations,
       );
     }
     if (!selected.length)
       sh.set("A4", "未提供对应图片 / SOURCE IMAGE NOT PROVIDED", regular);
     let row = 15;
     if (name === "CAD") {
-      for (const item of data.construction) {
+      for (const item of remainingConstruction(data, selected)) {
         sh.merged(
           `A${row}:B${row}`,
           bilingual(item.titleZh, item.titleEn),
@@ -1311,6 +1488,19 @@ export async function generateWorkbook(
         `A${row}:H${row}`,
         "颜色及规格以面辅料表为准。 / COLORS & SPECS PER MATERIALS TABLE.",
         40,
+        regular,
+      );
+      row++;
+    }
+    for (const annotation of unplacedAnnotationRows(
+      selected,
+      name === "CAD" ? remainingConstruction(data, selected) : [],
+    )) {
+      const text = bilingual(annotation.textZh, annotation.textEn);
+      sh.merged(
+        `A${row}:H${row}`,
+        text,
+        fittedHeight([text], [860], 12, 48),
         regular,
       );
       row++;
@@ -1663,7 +1853,7 @@ export async function generateWorkbook(
   }
   sheets.push(card.print(`A1:M${cardEnd}`));
   // Clear previous style identifiers only in editable metadata; original mail stays untouched.
-  const warnings = missingSummary(data);
+  const warnings = [...missingSummary(data), ...annotationWarnings(figures)];
   return {
     buffer: await book.finish(),
     sheets: book.sheets
@@ -2110,7 +2300,7 @@ export async function generateTemplateWorkbook(
 ) {
   const book = new TemplateBook(await JSZip.loadAsync(template));
   await book.initialize();
-  const warnings = missingSummary(data);
+  const warnings = [...missingSummary(data), ...annotationWarnings(figures)];
   const result: {
     name: string;
     area: string;
@@ -2334,6 +2524,7 @@ export async function generateTemplateWorkbook(
           `${colName(firstCol)}${row}`,
           width - 12,
           380,
+          image.annotations,
         );
         row += 10;
         if (image.caption) {
@@ -2349,11 +2540,15 @@ export async function generateTemplateWorkbook(
       }
       const textPages = generalCad;
       const textPage = textPages.indexOf(sh);
+      const pending = remainingConstruction(
+        data,
+        [...cadImages.values()].flat(),
+      );
       const textCount = Math.ceil(
-        data.construction.length / Math.max(1, textPages.length),
+        pending.length / Math.max(1, textPages.length),
       );
       if (textPage >= 0)
-        for (const item of data.construction.slice(
+        for (const item of pending.slice(
           textPage * textCount,
           (textPage + 1) * textCount,
         )) {
@@ -2365,6 +2560,16 @@ export async function generateTemplateWorkbook(
           writeTemplateCell(book, sh, `${colName(firstCol)}${row}`, text);
           row++;
         }
+      for (const annotation of unplacedAnnotationRows(selected, pending)) {
+        sh.merge(`${colName(firstCol)}${row}:${colName(lastCol)}${row}`);
+        writeTemplateCell(
+          book,
+          sh,
+          `${colName(firstCol)}${row}`,
+          bilingual(annotation.textZh, annotation.textEn),
+        );
+        row++;
+      }
     }
     if (role === "risk") {
       for (const cell of sh

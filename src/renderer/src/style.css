@@ -998,8 +998,29 @@ strong {
 }
 .figure-image img {
   max-width: 100%;
-  max-height: 250px;
+  max-height: 420px;
   object-fit: contain;
+}
+.annotation-editor {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border-top: 1px solid #dce5d1;
+  font-size: 11px;
+}
+.annotation-editor summary {
+  cursor: pointer;
+}
+.annotation-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: start;
+  gap: 12px;
+  margin-top: 14px;
+}
+.annotation-row textarea {
+  width: 100%;
+  font-size: 12px;
+  margin-top: 4px;
 }
 .figure-controls {
   padding: 14px;

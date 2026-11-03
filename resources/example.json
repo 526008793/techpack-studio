@@ -455,8 +455,8 @@
     {
       "titleZh": "前后浪",
       "titleEn": "FRONT & BACK RISE",
-      "detailZh": "双针鞍形线迹 / TWO NDL SADDLE STITCH",
-      "detailEn": "双针鞍形线迹 / TWO NDL SADDLE STITCH"
+      "detailZh": "双针鞍形线迹",
+      "detailEn": "TWO NDL SADDLE STITCH"
     },
     {
       "titleZh": "腰头",
@@ -518,7 +518,138 @@
         "height": 0.6862745098039216
       },
       "captionZh": "工艺图",
-      "captionEn": "construction"
+      "captionEn": "construction",
+      "annotations": [
+        {
+          "textEn": "FRONT & BACK RISE\nTWO NDL SADDLE STITCH",
+          "textZh": "双针鞍形线迹",
+          "sourceBox": {
+            "x": 0.496,
+            "y": 0.231,
+            "width": 0.106,
+            "height": 0.027
+          },
+          "labelBox": null
+        },
+        {
+          "textEn": "2\" HEIGHT FOLDED WAISTBAND W/ ENCASED ELASTIC\n-SNG NDL STITCH AT 3/8\" FROM TOP OF WAISTBAND\n-X2 ROWS ON SNG NDL STITCH 1/8\" FROM BOTTOM\nSTITCHING TO BE 3/8\" APART.\nCREATE A TUNNEL FOR DRAWCORD",
+          "textZh": "折叠成品高2英寸，内包橡筋；距腰顶3/8英寸单针；底部1/8英寸处两行单针，线距3/8英寸，形成抽绳通道。",
+          "sourceBox": {
+            "x": 0.693,
+            "y": 0.225,
+            "width": 0.212,
+            "height": 0.084
+          },
+          "labelBox": {
+            "x": 0.768,
+            "y": 0.316,
+            "width": 0.19,
+            "height": 0.145
+          }
+        },
+        {
+          "textEn": "3/8\" FLAT BRAIDED DRAWCORD\n-BUTTON HOLE EXIT\n-SILICONE DIPPED AGLET ON END\n-TACKED @ CB",
+          "textZh": "宽3/8英寸，锁眼出口，末端硅胶浸胶，后中固定。",
+          "sourceBox": {
+            "x": 0.102,
+            "y": 0.361,
+            "width": 0.144,
+            "height": 0.055
+          },
+          "labelBox": {
+            "x": 0.205,
+            "y": 0.237,
+            "width": 0.12,
+            "height": 0.115
+          }
+        },
+        {
+          "textEn": "ON SEAM WELT POCKETS\n-CVC JERSEY LINED\n-1/4\" SNG NDL EDGESTITCH\nWITH BAR TAC @ TOP & BOTTOM",
+          "textZh": "侧缝嵌线袋，CVC针织袋布；1/4英寸单针边线，上下端打枣。",
+          "sourceBox": {
+            "x": 0.106,
+            "y": 0.46,
+            "width": 0.129,
+            "height": 0.055
+          },
+          "labelBox": {
+            "x": 0.1,
+            "y": 0.52,
+            "width": 0.2,
+            "height": 0.07
+          }
+        },
+        {
+          "textEn": "1/8\" CORDED PIPING",
+          "textZh": "1/8英寸包绳嵌条",
+          "sourceBox": {
+            "x": 0.107,
+            "y": 0.55,
+            "width": 0.087,
+            "height": 0.013
+          },
+          "labelBox": {
+            "x": 0.1,
+            "y": 0.57,
+            "width": 0.2,
+            "height": 0.04
+          }
+        },
+        {
+          "textEn": "1\" HEIGHT ELASTICATED SELF CUFF AT ANKLE\n-1\" ENCASED ELASTIC\n-TURNBACK W/ DBL NDL TOP STITCH",
+          "textZh": "本布脚口成品高1英寸，内包1英寸橡筋；翻折双针明线。",
+          "sourceBox": {
+            "x": 0.096,
+            "y": 0.824,
+            "width": 0.196,
+            "height": 0.041
+          },
+          "labelBox": null
+        },
+        {
+          "textEn": "FABRIC 1",
+          "textZh": "面料1",
+          "sourceBox": {
+            "x": 0.721,
+            "y": 0.41,
+            "width": 0.032,
+            "height": 0.01
+          },
+          "labelBox": {
+            "x": 0.72,
+            "y": 0.429,
+            "width": 0.12,
+            "height": 0.03
+          }
+        },
+        {
+          "textEn": "FABRIC 2: PIPING",
+          "textZh": "面料2：嵌条",
+          "sourceBox": {
+            "x": 0.776,
+            "y": 0.48,
+            "width": 0.037,
+            "height": 0.022
+          },
+          "labelBox": {
+            "x": 0.777,
+            "y": 0.513,
+            "width": 0.15,
+            "height": 0.035
+          }
+        },
+        {
+          "textEn": "FABRIC 3: PKT BAG",
+          "textZh": "面料3：袋布",
+          "sourceBox": {
+            "x": 0.252,
+            "y": 0.392,
+            "width": 0.033,
+            "height": 0.022
+          },
+          "labelBox": null
+        }
+      ]
     },
     {
       "role": "trimReference",

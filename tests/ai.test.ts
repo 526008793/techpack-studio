@@ -62,6 +62,9 @@ test("Responses sends page images, strict schema and no persistent server storag
   assert.deepEqual(sent.reasoning, { effort: "xhigh" });
   assert.equal("reasoning_effort" in sent, false);
   assert.equal(sent.text.format.strict, true);
+  const figure = sent.text.format.schema.properties.figures.items;
+  assert.ok(figure.required.includes("annotations"));
+  assert.equal("default" in figure.properties.annotations, false);
   assert.ok(sent.input[1].content.some((x: any) => x.type === "input_image"));
 });
 test("reasoning effort uses each API's parameter and can follow the service default", async () => {

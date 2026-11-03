@@ -29,6 +29,22 @@ export const measurementSchema = z
     notes: text,
   })
   .strict();
+export const boxSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite(),
+    height: z.number().finite(),
+  })
+  .strict();
+export const annotationSchema = z
+  .object({
+    textEn: z.string(),
+    textZh: z.string(),
+    sourceBox: boxSchema,
+    labelBox: boxSchema.nullable(),
+  })
+  .strict();
 export const figureSchema = z
   .object({
     role: z.enum([
@@ -39,16 +55,11 @@ export const figureSchema = z
       "labels",
     ]),
     page: z.number().int().min(1),
-    box: z
-      .object({
-        x: z.number(),
-        y: z.number(),
-        width: z.number(),
-        height: z.number(),
-      })
-      .strict(),
+    box: boxSchema,
     captionZh: text,
     captionEn: text,
+    // 旧资料可以继续读取；新识别须同时提供英文标注与中文放置区域。
+    annotations: z.array(annotationSchema).default([]),
   })
   .strict();
 export const techPackSchema = z
@@ -97,6 +108,14 @@ export type TechPack = z.infer<typeof techPackSchema>;
 export type Material = z.infer<typeof materialSchema>;
 export type Measurement = z.infer<typeof measurementSchema>;
 export type Figure = z.infer<typeof figureSchema>;
+export type Box = z.infer<typeof boxSchema>;
+export type FigureAnnotation = z.infer<typeof annotationSchema>;
+export type PlacedAnnotation = {
+  textZh: string;
+  textEn: string;
+  box: Box;
+  fontSize: number;
+};
 export type ApiSettings = {
   protocol: "responses" | "chat";
   baseUrl: string;
@@ -113,11 +132,15 @@ export type PdfPage = {
   image: string;
   width: number;
   height: number;
+  textBlocks?: { text: string; box: Box }[];
 };
 export type FigureImage = {
   role: Figure["role"];
   data: string;
   caption: string;
+  annotations?: PlacedAnnotation[];
+  annotationWarnings?: string[];
+  unplacedAnnotations?: { textZh: string; textEn: string }[];
 };
 export type SelectedFile = {
   id: string;

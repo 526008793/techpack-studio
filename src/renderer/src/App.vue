@@ -14,7 +14,7 @@ import {
   type ExportSummary,
   type ApiSettings,
 } from "../../shared/model";
-import { readPdf, cropFigure, exportFigures, parseDimension } from "./pdf";
+import { readPdf, previewFigure, exportFigures, parseDimension } from "./pdf";
 import brandIconUrl from "../../../build/icon.png?url";
 import { version as appVersion } from "../../../package.json";
 
@@ -326,6 +326,7 @@ function addFigure() {
     box: { x: 0, y: 0, width: 1, height: 1 },
     captionZh: null,
     captionEn: null,
+    annotations: [],
   });
 }
 function setBox(index: number, key: keyof Figure["box"], event: Event) {
@@ -336,7 +337,9 @@ function setBox(index: number, key: keyof Figure["box"], event: Event) {
 async function updatePreviews() {
   const version = ++previewVersion;
   const images = await Promise.all(
-    data.value.figures.map((f) => cropFigure(f, pages.value).catch(() => "")),
+    data.value.figures.map((f) =>
+      previewFigure(f, pages.value).catch(() => ""),
+    ),
   );
   if (version === previewVersion) figurePreviews.value = images;
 }
@@ -1038,6 +1041,8 @@ onUnmounted(() => removeProgress?.());
                 </div>
                 <p class="inline-note">
                   从原PDF取图。裁剪范围以整页百分比填写，可调整页码和范围。
+                  蓝色中文自动放在对应英文附近，导出后可在 Excel
+                  中编辑、拖动文本框。
                 </p>
                 <div v-if="!pages.length" class="empty-state">
                   先返回导入页选择原 PDF，即可添加图片。
@@ -1111,6 +1116,39 @@ onUnmounted(() => removeProgress?.());
                       </button>
                     </div>
                   </div>
+                  <details
+                    v-if="item.annotations.length"
+                    class="annotation-editor"
+                  >
+                    <summary>
+                      图中中文标注 ·
+                      {{ item.annotations.length }} 条（可修改译文）
+                    </summary>
+                    <div
+                      v-for="(annotation, annotationIndex) in item.annotations"
+                      :key="annotationIndex"
+                      class="annotation-row"
+                    >
+                      <label
+                        >对应英文<textarea
+                          v-model="annotation.textEn"
+                          rows="2"
+                        ></textarea>
+                      </label>
+                      <label
+                        >中文译文<textarea
+                          v-model="annotation.textZh"
+                          rows="2"
+                        ></textarea>
+                      </label>
+                      <button
+                        class="text-button danger-text"
+                        @click="item.annotations.splice(annotationIndex, 1)"
+                      >
+                        删除这条标注
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
             </section>

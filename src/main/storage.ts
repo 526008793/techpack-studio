@@ -102,7 +102,7 @@ export function cacheKey(pdfHash: string, settings: ApiSettings) {
         settings.protocol,
         // 不同推理强度的识别结果分别缓存。
         settings.reasoningEffort,
-        "schema-1",
+        "schema-2-cad-annotations",
       ].join("\n"),
     )
     .digest("hex");

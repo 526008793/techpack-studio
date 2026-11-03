@@ -236,6 +236,12 @@ try {
   await page.screenshot({ path: path.join(output, "05-measurements.png") });
   await page.getByRole("tab", { name: "图片参考", exact: true }).click();
   assert.equal(await page.locator(".figure-card").count(), 5);
+  await page.locator(".annotation-editor summary").click();
+  assert.equal(await page.getByLabel("中文译文", { exact: true }).count(), 9);
+  await page
+    .getByLabel("中文译文", { exact: true })
+    .nth(6)
+    .fill("面料1（可编辑）");
   await page.waitForFunction(
     () =>
       [...document.querySelectorAll(".figure-image img")].length === 5 &&
@@ -244,6 +250,15 @@ try {
       ),
   );
   await page.screenshot({ path: path.join(output, "06-figures.png") });
+  const preview = await page
+    .locator(".figure-card")
+    .nth(1)
+    .locator(".figure-image img")
+    .getAttribute("src");
+  await fs.writeFile(
+    path.join(output, "cad-annotation-preview.png"),
+    Buffer.from(preview.split(",")[1], "base64"),
+  );
   const destination = path.join(output, "full-flow.xlsx");
   await app.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
@@ -256,6 +271,15 @@ try {
     .waitFor({ timeout: 60000 });
   await page.screenshot({ path: path.join(output, "07-export.png") });
   const zip = await JSZip.loadAsync(await fs.readFile(destination));
+  const drawingText = (
+    await Promise.all(
+      Object.keys(zip.files)
+        .filter((name) => /^xl\/drawings\/tp-.*\.xml$/.test(name))
+        .map((name) => zip.file(name).async("string")),
+    )
+  ).join("\n");
+  assert.match(drawingText.replace(/<[^>]+>/g, ""), /面料1（可编辑）/);
+  assert.ok([...drawingText.matchAll(/txBox="1"/g)].length >= 5);
   assert.match(
     await zip.file("xl/worksheets/sheet7.xml").async("string"),
     /<v>16\.25<\/v>/,
