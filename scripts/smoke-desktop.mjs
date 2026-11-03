@@ -111,7 +111,7 @@ try {
     initialRules,
   );
 
-  const incompatiblePath = path.join(output, "incompatible-template.xlsx");
+  const incompatiblePath = path.join(output, "reduced-template.xlsx");
   const incompatibleZip = await JSZip.loadAsync(
     await fs.readFile(path.join(root, "resources/template.xlsx")),
   );
@@ -135,11 +135,12 @@ try {
     });
   }, incompatiblePath);
   await page.getByRole("button", { name: "选择其他模板", exact: true }).click();
-  await page.getByText(/当前模板未更换/).waitFor();
-  assert.match(await page.getByRole("alert").innerText(), /「CAD」/);
-  await page.screenshot({ path: path.join(output, "01-template-error.png") });
+  await page.getByText("自定义模板 · 10 个工作表", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0);
+  await page.screenshot({
+    path: path.join(output, "01-variable-template.png"),
+  });
   await page.getByRole("button", { name: "使用内置模板", exact: true }).click();
-  await page.getByRole("alert").waitFor({ state: "hidden" });
   await page.getByText("内置 11 页模板", { exact: true }).waitFor();
   await app.evaluate(
     ({ dialog }, file) => {
@@ -267,6 +268,38 @@ try {
   assert.doesNotMatch(
     await zip.file("xl/worksheets/sheet6.xml").async("string"),
     /S260954|P4507|邹双双|ADTN-Wallance/,
+  );
+  await page.getByRole("button", { name: "继续修改资料", exact: true }).click();
+  await page.getByRole("button", { name: "返回导入", exact: true }).click();
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, incompatiblePath);
+  await page.getByRole("button", { name: "选择其他模板", exact: true }).click();
+  await page.getByText("自定义模板 · 10 个工作表", { exact: true }).waitFor();
+  await page.locator("nav.steps button").nth(1).click();
+  const customDestination = path.join(output, "reduced-template-output.xlsx");
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, customDestination);
+  await page
+    .getByRole("button", { name: "生成 Excel 制单", exact: false })
+    .click();
+  await page
+    .getByRole("heading", { name: "新制单已生成", exact: true })
+    .waitFor({ timeout: 60000 });
+  assert.equal(await page.locator(".sheet-list > div").count(), 10);
+  const customZip = await JSZip.loadAsync(await fs.readFile(customDestination));
+  assert.doesNotMatch(
+    await customZip.file("xl/workbook.xml").async("string"),
+    /name="CAD"/,
+  );
+  assert.equal(
+    requests,
+    1,
+    "adapting a custom template is local and does not call the model again",
   );
   await page
     .getByRole("button", { name: "处理下一份资料", exact: false })

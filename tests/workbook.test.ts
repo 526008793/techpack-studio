@@ -10,7 +10,11 @@ import {
   RISK_OPINION,
   type TechPack,
 } from "../src/shared/model";
-import { generateWorkbook, inspectTemplate } from "../src/main/workbook";
+import {
+  generateWorkbook,
+  generateTemplateWorkbook,
+  inspectTemplate,
+} from "../src/main/workbook";
 
 const root = path.resolve(import.meta.dirname, "..");
 async function fixture() {
@@ -147,7 +151,7 @@ test("different style and material counts do not reuse previous style metadata",
     "A1:H9",
   );
 });
-test("incompatible custom templates report every missing sheet before inspection or export", async () => {
+test("custom templates may omit CAD sheets without adding them back", async () => {
   const zip = await JSZip.loadAsync(
     await fs.readFile(path.join(root, "resources/template.xlsx")),
   );
@@ -159,11 +163,11 @@ test("incompatible custom templates report every missing sheet before inspection
   zip.file("xl/workbook.xml", new XMLSerializer().serializeToString(book));
   const incompatible = await zip.generateAsync({ type: "nodebuffer" });
   const data = await fixture();
-  const check = (error: unknown) =>
-    error instanceof Error &&
-    error.message.includes("「CAD」") &&
-    error.message.includes("「CAD-1」") &&
-    error.message.includes("栏目布局一致");
-  await assert.rejects(() => inspectTemplate(incompatible), check);
-  await assert.rejects(() => generateWorkbook(incompatible, data), check);
+  assert.equal((await inspectTemplate(incompatible)).length, 9);
+  const output = await generateTemplateWorkbook(incompatible, data);
+  assert.equal(output.sheets.length, 9);
+  assert.ok(
+    output.sheets.every((sheet) => !["CAD", "CAD-1"].includes(sheet.name)),
+  );
+  assert.equal((await inspectTemplate(output.buffer)).length, 9);
 });

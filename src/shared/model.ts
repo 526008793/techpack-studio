@@ -129,7 +129,12 @@ export type SelectedFile = {
 export type ExportSummary = {
   path: string;
   name: string;
-  sheets: { name: string; area: string; orientation: string }[];
+  sheets: {
+    name: string;
+    area: string;
+    orientation: string;
+    matched?: boolean;
+  }[];
   warnings: string[];
 };
 export const TBC = "待确认 / TBC";

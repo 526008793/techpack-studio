@@ -24,7 +24,9 @@ const step = ref(1),
   file = ref<SelectedFile | null>(null),
   pages = ref<PdfPage[]>([]),
   pageIndex = ref(0);
-const template = ref<{ id: string; name: string } | null>(null),
+const template = ref<{ id: string; name: string; sheets: string[] } | null>(
+    null,
+  ),
   data = ref<TechPack>(emptyTechPack()),
   hasData = ref(false),
   busy = ref(false),
@@ -572,7 +574,9 @@ onUnmounted(() => removeProgress?.());
                 </div>
                 <div>
                   <strong>{{
-                    template ? "自定义同格式模板" : "内置 11 页模板"
+                    template
+                      ? `自定义模板 · ${template.sheets.length} 个工作表`
+                      : "内置 11 页模板"
                   }}</strong
                   ><span>面辅料 · 尺寸 · 工艺 · 耗料 · 留卡</span
                   ><small>A4 单页打印 / 工作表</small>
@@ -594,7 +598,7 @@ onUnmounted(() => removeProgress?.());
                 </button>
               </div>
               <small class="hint"
-                >可直接使用内置模板。其他模板须工作表名称与栏目布局一致；旧版
+                >自定义模板按表头和标签定位，保留原有工作表和顺序。未识别的区域会提示核对。旧版
                 .xls 可通过已安装的 Excel / LibreOffice 转换。</small
               >
             </section>
@@ -1213,20 +1217,35 @@ onUnmounted(() => removeProgress?.());
           <section class="print-summary" v-if="result">
             <div class="section-heading">
               <h2>打印设置</h2>
-              <span>{{ result.sheets.length }} 个工作表 · 每表一页 · A4</span>
+              <span
+                >{{ result.sheets.length }} 个工作表 · 已匹配的表按 A4
+                单页打印</span
+              >
             </div>
             <div class="sheet-list">
               <div v-for="sheet in result.sheets" :key="sheet.name">
                 <span class="sheet-symbol">▤</span
                 ><strong>{{ sheet.name }}</strong
                 ><span>{{
-                  sheet.orientation === "portrait" ? "纵向" : "横向"
+                  sheet.matched === false
+                    ? "保留原设置"
+                    : sheet.orientation === "portrait"
+                      ? "纵向"
+                      : "横向"
                 }}</span
-                ><small>1 页</small>
+                ><small>{{
+                  sheet.matched === false ? "未自动填写" : "1 页"
+                }}</small>
               </div>
             </div>
             <p class="hint">
               实际字体由电脑上的 Excel / WPS 决定，打印前可再查看一次打印预览。
+            </p>
+          </section>
+          <section class="missing-panel" v-if="result?.warnings.length">
+            <h2>需要核对的项目</h2>
+            <p v-for="(warning, index) in result.warnings" :key="index">
+              {{ warning }}
             </p>
           </section>
           <div class="bottom-action">

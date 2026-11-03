@@ -20,7 +20,11 @@ import {
 } from "../shared/model";
 import { extractTechPack } from "./ai";
 import { SettingsStore, cacheKey, readCache, writeCache } from "./storage";
-import { generateWorkbook, inspectTemplate } from "./workbook";
+import {
+  generateWorkbook,
+  generateTemplateWorkbook,
+  inspectTemplate,
+} from "./workbook";
 import { readTemplateFile } from "./convert";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +86,7 @@ function register() {
   });
   handle("choose-template", async () => {
     const result = await dialog.showOpenDialog(window!, {
-      title: "选择同格式Excel模板",
+      title: "选择Excel制单模板",
       filters: [{ name: "Excel模板", extensions: ["xlsx", "xls"] }],
       properties: ["openFile"],
     });
@@ -164,7 +168,9 @@ function register() {
       });
       if (result.canceled || !result.filePath) return null;
       send("正在填写模板、替换图片并设置A4单页打印…");
-      const output = await generateWorkbook(template, data, request.figures);
+      const output = request.templateId
+        ? await generateTemplateWorkbook(template, data, request.figures)
+        : await generateWorkbook(template, data, request.figures);
       const temp = result.filePath + ".tmp";
       await fs.writeFile(temp, output.buffer);
       await fs.rename(temp, result.filePath);
