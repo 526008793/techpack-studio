@@ -124,3 +124,29 @@ test("API errors never expose the configured API key", async () => {
       error.message.includes("401"),
   );
 });
+test("connection errors explain DNS, proxy, refused, timeout and certificate failures without exposing keys", async () => {
+  const failures: [Error, RegExp][] = [
+    [
+      new TypeError("fetch failed", { cause: { code: "ENOTFOUND" } }),
+      /无法解析服务域名/,
+    ],
+    [new Error("net::ERR_PROXY_CONNECTION_FAILED"), /系统代理连接失败/],
+    [new Error("net::ERR_CONNECTION_REFUSED"), /服务拒绝连接/],
+    [new Error("net::ERR_CONNECTION_TIMED_OUT"), /连接超时/],
+    [new Error("net::ERR_CERT_AUTHORITY_INVALID"), /证书校验失败/],
+    [new Error(`fetch failed ${config.apiKey}`), /请核对 API 基础地址/],
+  ];
+  for (const [failure, expected] of failures) {
+    const fake = (async () => {
+      throw failure;
+    }) as typeof fetch;
+    await assert.rejects(
+      () => extractTechPack(config, pages, new AbortController().signal, fake),
+      (error) =>
+        error instanceof Error &&
+        expected.test(error.message) &&
+        error.message.includes("example.invalid") &&
+        !error.message.includes(config.apiKey!),
+    );
+  }
+});

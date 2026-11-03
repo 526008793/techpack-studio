@@ -20,7 +20,7 @@ const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const body = JSON.parse(Buffer.concat(chunks));
-    assert.equal(req.url, "/v1/responses");
+    assert.equal(req.url, "http://techpack-proxy.invalid/v1/responses");
     assert.equal(req.headers.authorization, "Bearer local-test-only");
     assert.equal(body.store, false);
     assert.deepEqual(body.reasoning, { effort: "xhigh" });
@@ -111,12 +111,71 @@ try {
     initialRules,
   );
 
+  const incompatiblePath = path.join(output, "incompatible-template.xlsx");
+  const incompatibleZip = await JSZip.loadAsync(
+    await fs.readFile(path.join(root, "resources/template.xlsx")),
+  );
+  const originalBook = await incompatibleZip
+    .file("xl/workbook.xml")
+    .async("string");
+  const withoutCad = originalBook.replace(
+    /<sheet\b[^>]*\bname="CAD"[^>]*\/>/,
+    "",
+  );
+  assert.notEqual(withoutCad, originalBook);
+  incompatibleZip.file("xl/workbook.xml", withoutCad);
+  await fs.writeFile(
+    incompatiblePath,
+    await incompatibleZip.generateAsync({ type: "nodebuffer" }),
+  );
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, incompatiblePath);
+  await page.getByRole("button", { name: "选择其他模板", exact: true }).click();
+  await page.getByText(/当前模板未更换/).waitFor();
+  assert.match(await page.getByRole("alert").innerText(), /「CAD」/);
+  await page.screenshot({ path: path.join(output, "01-template-error.png") });
+  await page.getByRole("button", { name: "使用内置模板", exact: true }).click();
+  await page.getByRole("alert").waitFor({ state: "hidden" });
+  await page.getByText("内置 11 页模板", { exact: true }).waitFor();
+  await app.evaluate(
+    ({ dialog }, file) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [file],
+      });
+    },
+    path.join(root, "resources/template.xlsx"),
+  );
+  await page.getByRole("button", { name: "选择其他模板", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "template.xlsx", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "使用内置模板", exact: true }).click();
+  await page.getByText("内置 11 页模板", { exact: true }).waitFor();
+  assert.equal(requests, 0, "template selection does not call a model");
+
+  // The fake hostname cannot resolve directly: only Chromium's configured proxy can reach this server.
+  await app.evaluate(
+    ({ session }, proxyPort) =>
+      session.defaultSession.setProxy({
+        mode: "fixed_servers",
+        proxyRules: `http=127.0.0.1:${proxyPort}`,
+      }),
+    port,
+  );
+
   await page
     .getByRole("button", { name: "模型与 API 设置", exact: false })
     .click();
   const settings = page.getByRole("dialog");
   assert.equal(await settings.getByLabel("推理强度").inputValue(), "xhigh");
-  await settings.getByLabel("API 基础地址").fill(`http://127.0.0.1:${port}/v1`);
+  await settings
+    .getByLabel("API 基础地址")
+    .fill("http://techpack-proxy.invalid/v1");
   await settings.getByLabel("模型名称").fill("mock-vision");
   await settings.getByLabel("API Key", { exact: true }).fill("local-test-only");
   await settings.getByLabel("使用系统加密记住 API Key").uncheck();
@@ -233,6 +292,7 @@ try {
       {
         passed: true,
         modelRequests: requests,
+        modelViaChromiumProxy: true,
         pdfPages: 7,
         measurements: 23,
         materials: 15,

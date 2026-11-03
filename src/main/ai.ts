@@ -30,7 +30,7 @@ export async function extractTechPack(
   settings: ApiSettings,
   pages: PdfPage[],
   signal: AbortSignal,
-  fetcher: typeof fetch = fetch,
+  fetcher: (url: string, options: RequestInit) => Promise<Response> = fetch,
 ): Promise<TechPack> {
   if (!settings.model.trim()) throw new Error("请先在设置中填写模型名称");
   if (!pages.length) throw new Error("PDF尚未读取完成");
@@ -94,9 +94,10 @@ export async function extractTechPack(
     "Content-Type": "application/json",
   };
   if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+  const url = endpoint(settings);
   let response: Response;
   try {
-    response = await fetcher(endpoint(settings), {
+    response = await fetcher(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -104,9 +105,42 @@ export async function extractTechPack(
     });
   } catch (error) {
     if (signal.aborted) throw new Error("识别已取消");
+    // Node 的错误原因常在 cause 中；Chromium 则直接返回 net::ERR_*。
+    const failure = error as {
+      message?: string;
+      code?: string;
+      cause?: { code?: string; message?: string };
+    } | null;
+    const detail = [
+      failure?.message,
+      failure?.code,
+      failure?.cause?.code,
+      failure?.cause?.message,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join(" ")
+      .replaceAll(settings.apiKey || "__NO_KEY__", "[已隐藏]");
+    const code = detail.match(
+      /\b(?:ERR_[A-Z_]+|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE)\b/,
+    )?.[0];
+    let hint = "请核对 API 基础地址，并检查网络或系统代理是否能访问该服务。";
+    if (/ENOTFOUND|EAI_AGAIN|ERR_NAME_/.test(detail))
+      hint = "无法解析服务域名，请核对 API 基础地址和 DNS 设置。";
+    else if (/ERR_PROXY_|ERR_TUNNEL_/.test(detail))
+      hint = "系统代理连接失败，请检查代理服务和代理设置。";
+    else if (/ECONNREFUSED|ERR_CONNECTION_REFUSED/.test(detail))
+      hint = "服务拒绝连接，请检查地址、端口以及模型服务是否已启动。";
+    else if (/TIMEOUT|TIMED_OUT/.test(detail))
+      hint = "连接超时，请检查网络、系统代理及模型服务是否可用。";
+    else if (/CERT_|SELF_SIGNED|UNABLE_TO_VERIFY/.test(detail))
+      hint = "证书校验失败，请检查系统日期和服务证书；不要关闭证书校验。";
+    const host = new URL(url).host;
+    console.error("[model:connection-failed]", {
+      host,
+      code: code || "unknown",
+    });
     throw new Error(
-      "连接模型失败，请检查网络、API地址或本地模型服务。" +
-        (error instanceof Error ? " " + error.message : ""),
+      `连接模型失败（${host}）：${hint}${code ? `（${code}）` : ""}`,
     );
   }
   const result = (await response.json().catch(() => null)) as any;

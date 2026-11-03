@@ -26,6 +26,19 @@ const DRAW =
   "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const A = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const CT = "http://schemas.openxmlformats.org/package/2006/content-types";
+const REQUIRED_SHEETS = [
+  "制单封面",
+  "数量搭配及打样要求",
+  "CAD",
+  "CAD-1",
+  "CAD-1 (2)",
+  "面辅料配色表",
+  "尺寸表",
+  "风险评估会",
+  "客人意见或邮件",
+  "耗料单",
+  "样衣面料留卡(2.0版)",
+];
 const parser = new DOMParser({
   onError: (level, message) => {
     if (level !== "warning") throw new Error(`模板XML无效：${message}`);
@@ -688,25 +701,21 @@ class TemplateBook {
       compression: "DEFLATE",
     });
   }
+  validateTemplate() {
+    const missing = REQUIRED_SHEETS.filter(
+      (name) => !this.sheets.some((sheet) => sheet.name.trim() === name),
+    );
+    if (missing.length)
+      throw new Error(
+        `模板缺少工作表：${missing.map((name) => `「${name}」`).join("、")}。自定义模板需要与内置模板的工作表名称和栏目布局一致。`,
+      );
+  }
 }
 
 export async function inspectTemplate(bytes: Buffer) {
   const book = new TemplateBook(await JSZip.loadAsync(bytes));
   await book.initialize();
-  for (const name of [
-    "制单封面",
-    "数量搭配及打样要求",
-    "CAD",
-    "CAD-1",
-    "CAD-1 (2)",
-    "面辅料配色表",
-    "尺寸表",
-    "风险评估会",
-    "客人意见或邮件",
-    "耗料单",
-    "样衣面料留卡(2.0版)",
-  ])
-    book.get(name);
+  book.validateTemplate();
   return book.sheets.map((s) => s.name);
 }
 function materialValues(m: Material): (string | number | null)[] {
@@ -755,20 +764,7 @@ export async function generateWorkbook(
 ) {
   const book = new TemplateBook(await JSZip.loadAsync(template));
   await book.initialize();
-  for (const name of [
-    "制单封面",
-    "数量搭配及打样要求",
-    "CAD",
-    "CAD-1",
-    "CAD-1 (2)",
-    "面辅料配色表",
-    "尺寸表",
-    "风险评估会",
-    "客人意见或邮件",
-    "耗料单",
-    "样衣面料留卡(2.0版)",
-  ])
-    book.get(name);
+  book.validateTemplate();
   const meta = data.meta,
     style = [meta.styleNumber, meta.styleName].filter(Boolean).join(" ") || TBC;
   const description = bilingual(meta.descriptionZh, meta.descriptionEn),

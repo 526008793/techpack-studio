@@ -136,6 +136,11 @@ async function chooseTemplate() {
     if (selected) template.value = selected;
   });
 }
+function useBuiltinTemplate() {
+  template.value = null;
+  error.value = "";
+  notice.value = "已使用内置 11 页模板，无需再选择其他模板。";
+}
 function acceptData(value: TechPack) {
   const validated = techPackSchema.parse(value);
   validated.materials = normalizedMaterials(validated);
@@ -581,15 +586,16 @@ onUnmounted(() => removeProgress?.());
                 >
                   选择其他模板</button
                 ><button
-                  v-if="template"
                   class="text-button"
-                  @click="template = null"
+                  @click="useBuiltinTemplate"
+                  :disabled="busy"
                 >
-                  恢复内置模板
+                  使用内置模板
                 </button>
               </div>
               <small class="hint"
-                >旧版 .xls 可通过已安装的 Excel / LibreOffice 转换。</small
+                >可直接使用内置模板。其他模板须工作表名称与栏目布局一致；旧版
+                .xls 可通过已安装的 Excel / LibreOffice 转换。</small
               >
             </section>
           </div>
@@ -1265,7 +1271,7 @@ onUnmounted(() => removeProgress?.());
         </div>
         <p class="modal-description">
           识别 PDF 和翻译时使用此服务。模板填写、图片处理和 Excel
-          导出在本机完成。
+          导出在本机完成。其他电脑需自行配置模型服务，连接跟随系统代理。
         </p>
         <div v-if="error" class="alert error" role="alert">{{ error }}</div>
         <label

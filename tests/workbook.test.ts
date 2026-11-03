@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
-import { DOMParser } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import {
   techPackSchema,
   normalizedMaterials,
@@ -146,4 +146,24 @@ test("different style and material counts do not reuse previous style metadata",
     out.sheets.find((s) => s.name === "面辅料配色表 ")?.area,
     "A1:H9",
   );
+});
+test("incompatible custom templates report every missing sheet before inspection or export", async () => {
+  const zip = await JSZip.loadAsync(
+    await fs.readFile(path.join(root, "resources/template.xlsx")),
+  );
+  const book = await xml(zip, "xl/workbook.xml");
+  for (const sheet of Array.from(book.getElementsByTagNameNS("*", "sheet"))) {
+    if (["CAD", "CAD-1"].includes(sheet.getAttribute("name")!))
+      sheet.parentNode!.removeChild(sheet);
+  }
+  zip.file("xl/workbook.xml", new XMLSerializer().serializeToString(book));
+  const incompatible = await zip.generateAsync({ type: "nodebuffer" });
+  const data = await fixture();
+  const check = (error: unknown) =>
+    error instanceof Error &&
+    error.message.includes("「CAD」") &&
+    error.message.includes("「CAD-1」") &&
+    error.message.includes("栏目布局一致");
+  await assert.rejects(() => inspectTemplate(incompatible), check);
+  await assert.rejects(() => generateWorkbook(incompatible, data), check);
 });

@@ -557,6 +557,10 @@ strong {
 .template-actions .secondary {
   width: 100%;
 }
+.template-actions .text-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .hint {
   display: block;
   font-size: 10px;

@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
   safeStorage,
   shell,
 } from "electron";
@@ -86,11 +87,18 @@ function register() {
       properties: ["openFile"],
     });
     if (result.canceled) return null;
-    const bytes = await readTemplateFile(result.filePaths[0]);
-    const sheets = await inspectTemplate(bytes),
-      id = randomUUID();
-    templates.set(id, bytes);
-    return { id, name: path.basename(result.filePaths[0]), sheets };
+    const name = path.basename(result.filePaths[0]);
+    try {
+      const bytes = await readTemplateFile(result.filePaths[0]);
+      const sheets = await inspectTemplate(bytes),
+        id = randomUUID();
+      templates.set(id, bytes);
+      return { id, name, sheets };
+    } catch (error) {
+      throw new Error(
+        `无法使用自定义模板“${name}”：${error instanceof Error ? error.message : String(error)} 当前模板未更换，可点击“使用内置模板”继续。`,
+      );
+    }
   });
   handle("settings", () => settings.public());
   handle("save-settings", (next: ApiSettings) => settings.save(next));
@@ -120,6 +128,8 @@ function register() {
           config,
           request.pages,
           controller.signal,
+          // 使用 Chromium 网络栈，跟随 Windows 等系统的代理配置。
+          (url, options) => net.fetch(url, options),
         );
         await writeCache(app.getPath("userData"), key, data);
         send("识别完成，请核对资料");
