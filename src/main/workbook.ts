@@ -10,7 +10,6 @@ import {
 import {
   bilingual,
   normalizedMaterials,
-  TBC,
   RISK_OPINION,
   missingSummary,
   type TechPack,
@@ -18,6 +17,13 @@ import {
   type FigureImage,
   type PlacedAnnotation,
 } from "../shared/model";
+import {
+  chinese,
+  chineseColor,
+  chineseExportWarnings,
+  chineseLabel,
+  CHINESE_TBC,
+} from "../shared/chinese-text";
 import {
   annotationWarnings,
   remainingConstruction,
@@ -28,6 +34,7 @@ import {
   scalarField,
   templateRole,
   templateTables,
+  sampleTotalRow,
   type TemplateCell,
   type TemplateSheet,
   type TemplateTable,
@@ -41,6 +48,7 @@ const DRAW =
   "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const A = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const CT = "http://schemas.openxmlformats.org/package/2006/content-types";
+const TBC = CHINESE_TBC;
 const parser = new DOMParser({
   onError: (level, message) => {
     if (level !== "warning") throw new Error(`模板XML无效：${message}`);
@@ -1228,17 +1236,18 @@ export async function inspectTemplate(bytes: Buffer) {
 function materialValues(m: Material): (string | number | null)[] {
   const extra = m.colors
     .slice(2)
-    .map((color, i) => `配色${i + 3} / COLORWAY ${i + 3}: ${color}`)
+    .map((color, i) => `配色${i + 3}：${chineseColor(color)}`)
     .join("\n");
   return [
-    bilingual(m.nameZh, m.nameEn),
-    bilingual(m.specZh, m.specEn),
-    m.colors[0] || TBC,
-    m.colors[1] || null,
+    chinese(m.nameZh),
+    chinese(m.specZh),
+    m.colors[0] ? chineseColor(m.colors[0]) : CHINESE_TBC,
+    m.colors[1] ? chineseColor(m.colors[1]) : null,
     m.quantity,
-    bilingual(m.unitZh, m.unitEn),
-    bilingual(m.placementZh, m.placementEn),
-    [m.notesZh, m.notesEn, extra].filter(Boolean).join("\n") || null,
+    chinese(m.unitZh),
+    chinese(m.placementZh),
+    [m.notesZh ? chinese(m.notesZh) : null, extra].filter(Boolean).join("\n") ||
+      null,
   ];
 }
 function fittedHeight(
@@ -1264,6 +1273,42 @@ function fittedHeight(
   return Math.max(min, lines * size * 1.25 + 12);
 }
 
+function localizeSheetLabels(sh: Sheet, role: ReturnType<typeof templateRole>) {
+  if (["cad", "measurements", "mail", "unknown"].includes(role)) return;
+  const snapshot = sh.snapshot();
+  const protectedAfter =
+    role === "sample" ? sampleTotalRow(snapshot) : undefined;
+  const headers = new Map<string, string>(
+    templateTables(snapshot, role).flatMap((table) =>
+      table.columns.map(
+        (column) =>
+          [`${colName(column.col)}${table.row}`, column.field] as const,
+      ),
+    ),
+  );
+  for (const cell of snapshot.cells) {
+    if (
+      typeof cell.value !== "string" ||
+      (protectedAfter !== undefined && cell.row > protectedAfter) ||
+      cell.value.startsWith("风险评估会意见：")
+    )
+      continue;
+    let value = cell.value
+      .replaceAll("待确认 / TBC", TBC)
+      .replace(/\bTBC\b/g, TBC);
+    if (
+      cell.row <= 2 ||
+      headers.has(cell.address) ||
+      scalarField(cell.value) ||
+      /所需信息|SWATCHINFORMATION|^(配色|COLORWAY|总计|合计|TOTAL)/.test(
+        normalizeLabel(cell.value),
+      )
+    )
+      value = chineseLabel(value, headers.get(cell.address));
+    if (value !== cell.value) sh.set(cell.address, value);
+  }
+}
+
 export async function generateWorkbook(
   template: Buffer,
   data: TechPack,
@@ -1273,7 +1318,7 @@ export async function generateWorkbook(
   await book.initialize();
   const meta = data.meta,
     style = [meta.styleNumber, meta.styleName].filter(Boolean).join(" ") || TBC;
-  const description = bilingual(meta.descriptionZh, meta.descriptionEn),
+  const description = chinese(meta.descriptionZh),
     materials = normalizedMaterials(data),
     fabrics = materials.filter(
       (m) => m.kind === "fabric" || m.kind === "interlining",
@@ -1308,19 +1353,19 @@ export async function generateWorkbook(
   }))
     cover.set(cell, value, coverStyle);
   for (const [cell, value] of Object.entries({
-    B33: "客户 / CUSTOMER",
-    B34: "订单号 / ORDER",
-    B35: "款号 / STYLE",
-    B36: "款式 / DESCRIPTION",
-    B37: "跟单 / MERCHANDISER",
-    B38: "经理审核 / APPROVAL",
-    B39: "发单日期 / ISSUE DATE",
+    B33: "客户",
+    B34: "订单号",
+    B35: "款号",
+    B36: "款式",
+    B37: "跟单",
+    B38: "经理审核",
+    B39: "发单日期",
   }))
     cover.set(cell, value, coverStyle);
   for (let r = 33; r <= 39; r++) cover.height(r, r === 36 ? 64 : 40);
   cover.merged(
     "F2:G2",
-    "版师 / PATTERN MAKER: TBC",
+    "版师：待确认",
     25,
     book.style(coverStyle, { size: 10 }),
   );
@@ -1328,28 +1373,29 @@ export async function generateWorkbook(
     await cover.picture(figure("appearance")[0].data, "F5", 120, 300);
   sheets.push(cover.print("A1:G39"));
 
-  await sample.drawing();
-  sample.clear("A3:J13");
+  // 总计下方的客户说明保留原文、合并、样式和行高，旧款图片继续清除。
+  await sample.drawing(false, true);
+  sample.clear("A3:J9");
   const small = book.style(sample.style("A3"), { size: 12 });
   for (const [cell, value] of Object.entries({
-    A2: "数量搭配及打样要求 / SAMPLE REQUIREMENTS",
-    A3: "订单号 / ORDER",
+    A2: "数量搭配及打样要求",
+    A3: "订单号",
     B3: meta.orderNumber || TBC,
-    D3: "工厂 / FACTORY",
+    D3: "工厂",
     F3: meta.factory || TBC,
-    G3: "样衣数量 / QTY",
+    G3: "样衣数量",
     I3: meta.sampleQuantity ?? TBC,
-    A4: "款号 / STYLE",
+    A4: "款号",
     B4: style,
-    D4: "属性 / STAGE",
-    F4: "开发 / DEVELOPMENT",
-    G4: "样品交期 / DUE",
+    D4: "属性",
+    F4: "开发",
+    G4: "样品交期",
     I4: meta.dueDate || TBC,
-    A5: "品名 / DESCRIPTION",
+    A5: "品名",
     B5: description,
-    D5: "跟单 / MERCH.",
+    D5: "跟单",
     F5: meta.merchandiser || TBC,
-    G5: "发单日期 / ISSUE",
+    G5: "发单日期",
     I5: meta.issueDate || TBC,
   }))
     sample.set(cell, value, small);
@@ -1358,14 +1404,14 @@ export async function generateWorkbook(
   sample.height(5, 80);
   sample.height(6, 40);
   sample.height(7, 62);
-  sample.set("A6", "配色 / COLORWAY", small);
+  sample.set("A6", "配色", small);
   meta.sizeScale
     .slice(0, 7)
     .forEach((s, i) => sample.set(`${colName(i + 2)}6`, s, small));
-  sample.set("I6", "总计 / TOTAL", small);
+  sample.set("I6", "总计", small);
   sample.set(
     "A7",
-    materials.find((m) => m.kind === "fabric")?.colors[0] || TBC,
+    chineseColor(materials.find((m) => m.kind === "fabric")?.colors[0] || ""),
     small,
   );
   for (let c = 2; c <= Math.min(8, meta.sizeScale.length + 1); c++)
@@ -1377,18 +1423,9 @@ export async function generateWorkbook(
       small,
     );
   sample.set("I7", meta.sampleQuantity ?? TBC, small);
-  sample.set("A9", "总计 / TOTAL", small);
+  sample.set("A9", "总计", small);
   sample.set("I9", meta.sampleQuantity ?? TBC, small);
-  const samplingNotes = [
-    `样码 / SAMPLE: ${meta.sampleSize || TBC}; 尺码 / SIZES: ${meta.sizeScale.join("-") || TBC}`,
-    `数量、交期和工厂以确认信息为准。 / QTY, DUE DATE & FACTORY REQUIRE CONFIRMATION.`,
-    `尺寸仅按提供的样码资料填写，不推算。 / USE PROVIDED SAMPLE-SIZE SPECS; NO GRADING INFERRED.`,
-    `检验及交期条款另行确认。 / INSPECTION & DELIVERY TERMS REQUIRE CONFIRMATION.`,
-  ];
-  samplingNotes.forEach((n, i) =>
-    sample.merged(`A${10 + i}:J${10 + i}`, n, 38, small),
-  );
-  sheets.push(sample.print("A1:J13"));
+  sheets.push(sample.print(`A1:J${Math.max(13, sample.bounds().row)}`));
 
   // CAD panels retain original tabs, with source figures and editable translations.
   for (const [name, title, roles] of [
@@ -1511,19 +1548,19 @@ export async function generateWorkbook(
   await bom.drawing();
   bom.unmerge("A5:H200");
   bom.clear("A5:H200");
-  bom.set("A1", `${style} 面辅料搭配表 / BILL OF MATERIALS`);
+  bom.set("A1", `${style} 面辅料搭配表`);
   for (const [cell, value] of Object.entries({
-    A2: "订单号 / ORDER",
+    A2: "订单号",
     B2: meta.orderNumber || TBC,
-    A3: "款号 / STYLE",
+    A3: "款号",
     B3: style,
-    A4: "品名 / DESCRIPTION",
+    A4: "品名",
     B4: description,
-    E2: "客户 / CUSTOMER",
+    E2: "客户",
     G2: [meta.brand, meta.customer].filter(Boolean).join(" / ") || TBC,
-    E3: "跟单 / MERCH.",
+    E3: "跟单",
     G3: meta.merchandiser || TBC,
-    E4: "资料日期 / TP DATE",
+    E4: "资料日期",
     G4: meta.sourceDate || TBC,
     H3: null,
     H4: null,
@@ -1535,14 +1572,14 @@ export async function generateWorkbook(
   if (figure("appearance")[0])
     await bom.picture(figure("appearance")[0].data, "C2", 110, 165);
   const headers = [
-    "面料名称 / FABRIC",
-    "规格 / SPEC",
-    "配色1 / COLORWAY 1",
-    "配色2 / COLORWAY 2",
-    "数量 / QTY",
-    "单位\nUNIT",
-    "部位 / PLACEMENT",
-    "备注 / NOTES",
+    "面料名称",
+    "规格",
+    "配色1",
+    "配色2",
+    "数量",
+    "单位",
+    "部位",
+    "备注",
   ];
   const unitHeading = book.style(heading, { size: 10, bold: true, fill: true });
   headers.forEach((v, i) =>
@@ -1560,7 +1597,7 @@ export async function generateWorkbook(
     bomRow++;
   }
   headers
-    .map((h, i) => (i === 0 ? "辅料名称 / TRIMS" : h))
+    .map((h, i) => (i === 0 ? "辅料名称" : h))
     .forEach((v, i) =>
       bom.set(`${colName(i + 1)}${bomRow}`, v, i === 5 ? unitHeading : heading),
     );
@@ -1575,7 +1612,7 @@ export async function generateWorkbook(
   }
   bom.merged(
     `A${bomRow}:H${bomRow}`,
-    "空白数量表示资料未提供；不是零用量。 / BLANK QTY = NOT PROVIDED, NOT ZERO.",
+    "空白数量表示资料未提供；不是零用量。",
     34,
     book.style(regular, { size: 11 }),
   );
@@ -1675,21 +1712,16 @@ export async function generateWorkbook(
   risk.height(3, 38);
   risk.height(4, 38);
   risk.height(5, fittedHeight([description], [risk.width(7)], 11, 72));
-  for (const [i, v] of [
-    "名称 / ITEM",
-    "规格 / SPEC",
-    "部位 / USE",
-    "备注 / NOTES",
-  ].entries())
+  for (const [i, v] of ["名称", "规格", "部位", "备注"].entries())
     risk.set(`${colName(i + 4)}6`, v, label);
   risk.height(6, 30);
   for (const [i, m] of fabrics.entries()) {
     const row = i + 7;
     const values = [
-      bilingual(m.nameZh, m.nameEn),
-      bilingual(m.specZh, m.specEn),
-      bilingual(m.placementZh, m.placementEn),
-      m.colors.join("\n") || TBC,
+      chinese(m.nameZh),
+      chinese(m.specZh),
+      chinese(m.placementZh),
+      m.colors.map(chineseColor).join("\n") || TBC,
     ];
     values.forEach((v, j) => risk.set(`${colName(j + 4)}${row}`, v, label));
     risk.height(
@@ -1716,7 +1748,7 @@ export async function generateWorkbook(
     risk.merged(`A${row}:G${row}`, "", 38, regular);
   risk.merged(
     `A${opinionRow + 7}:G${opinionRow + 7}`,
-    "签字 / SIGNATURE: __________________    日期 / DATE: __________________",
+    "签字：__________________    日期：__________________",
     36,
     regular,
   );
@@ -1733,29 +1765,29 @@ export async function generateWorkbook(
   await cons.drawing(false, true);
   cons.unmerge("A6:L150");
   cons.clear("A6:L150");
-  cons.set("A1", "武汉多恩投资有限公司耗料申请单 / MATERIAL CONSUMPTION");
-  cons.set("B3", "订单 / ORDER:", compact);
-  cons.set("B4", "款号 / STYLE:", compact);
-  cons.set("H3", "日期 / DATE:", compact);
+  cons.set("A1", "武汉多恩投资有限公司耗料申请单");
+  cons.set("B3", "订单：", compact);
+  cons.set("B4", "款号：", compact);
+  cons.set("H3", "日期：", compact);
   cons.set("D3", meta.orderNumber || TBC, compact);
   cons.set("I3", meta.issueDate || TBC, compact);
   cons.set("C4", style, compact);
-  cons.set("H4", "耗料师 / REVIEWER: TBC", compact);
+  cons.set("H4", "耗料师：待确认", compact);
   cons.height(3, 32);
   cons.height(4, 32);
   const consHeaders = [
-    "款号 / STYLE",
-    "图 / SKETCH",
-    "类别 / STAGE",
-    "数量 / QTY",
-    "物料 / MATERIAL",
-    "部位 / USE",
-    "净幅宽 / WIDTH",
-    "经缩 / WARP",
-    "纬缩 / WEFT",
-    "净耗 / NET USE",
-    "损耗 / WASTE",
-    "报价耗料 / QUOTED",
+    "款号",
+    "图",
+    "类别",
+    "数量",
+    "物料",
+    "部位",
+    "净幅宽",
+    "经缩",
+    "纬缩",
+    "净耗",
+    "损耗",
+    "报价耗料",
   ];
   consHeaders.forEach((v, i) => cons.set(`${colName(i + 1)}5`, v, compact));
   cons.height(5, 48);
@@ -1763,15 +1795,15 @@ export async function generateWorkbook(
     const row = i + 6;
     const values = [
       style,
-      i === 0 ? "" : "见封面 / COVER",
-      "开发 / DEV",
+      i === 0 ? "" : "见封面",
+      "开发",
       meta.sampleQuantity ?? TBC,
-      bilingual(m.nameZh, m.nameEn) +
+      chinese(m.nameZh) +
         "\n" +
-        bilingual(m.specZh, m.specEn) +
+        chinese(m.specZh) +
         "\n" +
-        (m.colors[0] || TBC),
-      bilingual(m.placementZh, m.placementEn),
+        (m.colors[0] ? chineseColor(m.colors[0]) : TBC),
+      chinese(m.placementZh),
       TBC,
       TBC,
       TBC,
@@ -1795,13 +1827,13 @@ export async function generateWorkbook(
   const consLast = fabrics.length + 7;
   cons.merged(
     `A${consLast}:L${consLast}`,
-    "幅宽、缩水率、单耗和损耗率须测试/核算，不沿用旧款数值。 / WIDTH, SHRINKAGE, CONSUMPTION & WASTE: TBC.",
+    "幅宽、缩水率、单耗和损耗率须测试/核算，不沿用旧款数值。",
     40,
     compact,
   );
   cons.merged(
     `A${consLast + 1}:L${consLast + 1}`,
-    `制单 / PREPARED BY: ${meta.merchandiser || TBC}`,
+    `制单：${meta.merchandiser || TBC}`,
     30,
     compact,
   );
@@ -1810,13 +1842,13 @@ export async function generateWorkbook(
   await card.drawing();
   card.unmerge("A5:J250");
   card.clear("A5:J250");
-  card.set("A2", "样衣面料留底卡 / FABRIC SWATCH CARD");
+  card.set("A2", "样衣面料留底卡");
   for (const [cell, value] of Object.entries({
-    A3: "客户 / CLIENT",
-    C3: "款号 / STYLE",
-    E3: "款式 / STYLE",
-    G3: "跟单 / MERCH.",
-    I3: "日期 / DATE",
+    A3: "客户",
+    C3: "款号",
+    E3: "款式",
+    G3: "跟单",
+    I3: "日期",
   }))
     card.set(cell, value, label);
   for (const [cell, value] of Object.entries({
@@ -1838,10 +1870,10 @@ export async function generateWorkbook(
   for (const [i, m] of fabrics.entries()) {
     const start = 6 + i * block;
     const texts = [
-      bilingual(m.nameZh, m.nameEn) + ": " + bilingual(m.specZh, m.specEn),
-      `颜色 / COLOR: ${m.colors[0] || TBC}; 部位 / USE: ${bilingual(m.placementZh, m.placementEn)}`,
-      "供应商、幅宽、价格、收布日期/米数 / SUPPLIER, WIDTH, PRICE, RECEIPT DATE/LENGTH: TBC",
-      "实样粘贴区 / ATTACH PHYSICAL SWATCH HERE",
+      chinese(m.nameZh) + "：" + chinese(m.specZh),
+      `颜色：${m.colors[0] ? chineseColor(m.colors[0]) : TBC}；部位：${chinese(m.placementZh)}`,
+      "供应商、幅宽、价格、收布日期/米数：待确认",
+      "实样粘贴区",
     ];
     for (const [j, offset] of [0, 1, 2, 4].entries())
       card.merged(
@@ -1853,7 +1885,13 @@ export async function generateWorkbook(
   }
   sheets.push(card.print(`A1:M${cardEnd}`));
   // Clear previous style identifiers only in editable metadata; original mail stays untouched.
-  const warnings = [...missingSummary(data), ...annotationWarnings(figures)];
+  const warnings = [
+    ...missingSummary(data),
+    ...annotationWarnings(figures),
+    ...chineseExportWarnings(data),
+  ];
+  for (const sh of book.sheets)
+    localizeSheetLabels(sh, templateRole(sh.snapshot()));
   return {
     buffer: await book.finish(),
     sheets: book.sheets
@@ -1863,14 +1901,25 @@ export async function generateWorkbook(
   };
 }
 
-function templateMeta(data: TechPack): Record<string, string | number | null> {
+function templateMeta(
+  data: TechPack,
+  dualLanguage: boolean,
+): Record<string, string | number | null> {
   const { sizeScale, ...meta } = data.meta;
   return {
     ...meta,
-    description: bilingual(data.meta.descriptionZh, data.meta.descriptionEn),
+    description: dualLanguage
+      ? bilingual(data.meta.descriptionZh, data.meta.descriptionEn)
+      : chinese(data.meta.descriptionZh),
     customer:
       [data.meta.brand, data.meta.customer].filter(Boolean).join(" / ") || TBC,
-    unit: data.meta.unit === "inch" ? "英寸 / INCH" : "厘米 / CM",
+    unit: dualLanguage
+      ? data.meta.unit === "inch"
+        ? "英寸 / INCH"
+        : "厘米 / CM"
+      : data.meta.unit === "inch"
+        ? "英寸"
+        : "厘米",
     clear: TBC,
   };
 }
@@ -1930,9 +1979,14 @@ function fillTemplateMeta(
   endRow: number,
   warnings: string[],
   extraRows: Set<number> = new Set(),
+  protectedAfter = Infinity,
 ) {
   const snapshot = sh.snapshot();
-  const values = templateMeta(data);
+  snapshot.cells = snapshot.cells.filter((cell) => cell.row <= protectedAfter);
+  const values = templateMeta(
+    data,
+    ["cad", "measurements"].includes(templateRole(sh.snapshot())),
+  );
   const claimed = new Set<string>();
   const replacements = new Map<
     string,
@@ -1993,7 +2047,7 @@ function fillTemplateMeta(
       let value = replacement.value;
       if (book.fontInfo(sh.style(cell.address)).vertical) {
         if (replacement.field === "description")
-          value = data.meta.descriptionZh || data.meta.descriptionEn || TBC;
+          value = chinese(data.meta.descriptionZh);
         if (replacement.field === "customer")
           value = data.meta.brand || data.meta.customer || TBC;
       }
@@ -2037,21 +2091,21 @@ function templateRowValues(
 ): Record<string, string | number | null> {
   if ("kind" in item) {
     const colors = Object.fromEntries(
-      item.colors.map((color, i) => [`color${i + 1}`, color]),
+      item.colors.map((color, i) => [`color${i + 1}`, chineseColor(color)]),
     );
     return {
       ...colors,
-      name: bilingual(item.nameZh, item.nameEn),
-      spec: bilingual(item.specZh, item.specEn),
+      name: chinese(item.nameZh),
+      spec: chinese(item.specZh),
       quantity: item.quantity,
       sampleQuantity: data.meta.sampleQuantity ?? TBC,
       // 构件单耗和样衣数量都不能当作大货产量，现有资料未提供时留待确认。
       productionQuantity: TBC,
-      unit: bilingual(item.unitZh, item.unitEn),
-      placement: bilingual(item.placementZh, item.placementEn),
-      notes: [item.notesZh, item.notesEn].filter(Boolean).join("\n") || null,
+      unit: chinese(item.unitZh),
+      placement: chinese(item.placementZh),
+      notes: item.notesZh ? chinese(item.notesZh) : null,
       style: data.meta.styleNumber || TBC,
-      stage: "开发 / DEVELOPMENT",
+      stage: "开发",
       width: TBC,
       warp: TBC,
       weft: TBC,
@@ -2116,9 +2170,9 @@ async function fillTemplateTable(
     const values = templateRowValues(data, item);
     if (consumption && "kind" in item)
       values.name = [
-        bilingual(item.nameZh, item.nameEn),
-        bilingual(item.specZh, item.specEn),
-        item.colors.join(" / ") || TBC,
+        chinese(item.nameZh),
+        chinese(item.specZh),
+        item.colors.map(chineseColor).join(" / ") || TBC,
       ].join("\n");
     if (!("kind" in item)) {
       if (!table.columns.some((c) => c.field === "nameZh"))
@@ -2178,15 +2232,14 @@ async function fillSampleGrid(book: TemplateBook, sh: Sheet, data: TechPack) {
   const total = snapshot.cells.find(
     (c) => c.row === color.row && /总计|TOTAL/.test(normalizeLabel(c.value)),
   );
+  const footerRow = sampleTotalRow(snapshot);
   const footer = snapshot.cells.find(
     (c) =>
-      c.row > color.row &&
-      c.col === color.col &&
-      /总计|TOTAL/.test(normalizeLabel(c.value)),
+      c.row === footerRow && /总计|合计|TOTAL/.test(normalizeLabel(c.value)),
   );
   const colors =
     normalizedMaterials(data).find((m) => m.kind === "fabric")?.colors || [];
-  const records = colors.length ? colors : [TBC];
+  const records = colors.length ? colors.map(chineseColor) : [TBC];
   const end = footer ? footer.row - 1 : color.row + records.length;
   const extra = Math.max(0, records.length - (end - color.row));
   await sh.insertRows(end + 1, extra, color.row + 1);
@@ -2223,24 +2276,7 @@ async function fillSampleGrid(book: TemplateBook, sh: Sheet, data: TechPack) {
       `${colName(total.col)}${footer.row + extra}`,
       data.meta.sampleQuantity ?? TBC,
     );
-  // 旧款模板中的验货标准和交期约定不能成为新PDF的事实。
-  const notes = footer
-    ? snapshot.cells.filter(
-        (c) =>
-          c.row > footer.row &&
-          c.col === color.col &&
-          typeof c.value === "string" &&
-          c.value.length > 10,
-      )
-    : [];
-  notes.forEach((cell, index) =>
-    sh.set(
-      `${colName(cell.col)}${cell.row + extra}`,
-      index === 0
-        ? "验货、物料及交期条款待确认 / INSPECTION & DELIVERY TERMS: TBC"
-        : null,
-    ),
-  );
+  // 总计下方的说明随新增配色整行下移，不重写客户条款。
 }
 
 async function fillSwatches(book: TemplateBook, sh: Sheet, data: TechPack) {
@@ -2267,10 +2303,7 @@ async function fillSwatches(book: TemplateBook, sh: Sheet, data: TechPack) {
   for (let row = start; row <= last; row++) sh.height(row, 12);
   fabrics.forEach((material, index) => {
     const row = start + block * index;
-    const text =
-      bilingual(material.nameZh, material.nameEn) +
-      "\n" +
-      bilingual(material.specZh, material.specEn);
+    const text = chinese(material.nameZh) + "\n" + chinese(material.specZh);
     sh.merge(`${colName(firstCol)}${row}:${colName(endCol)}${row}`);
     writeTemplateCell(book, sh, `${colName(firstCol)}${row}`, text);
     sh.merge(`${colName(firstCol)}${row + 1}:${colName(endCol)}${row + 1}`);
@@ -2278,17 +2311,12 @@ async function fillSwatches(book: TemplateBook, sh: Sheet, data: TechPack) {
       book,
       sh,
       `${colName(firstCol)}${row + 1}`,
-      `颜色 / COLOR: ${material.colors.join(" / ") || TBC}; 部位 / USE: ${bilingual(material.placementZh, material.placementEn)}`,
+      `颜色：${material.colors.map(chineseColor).join(" / ") || TBC}；部位：${chinese(material.placementZh)}`,
     );
     sh.merge(
       `${colName(firstCol)}${row + 3}:${colName(endCol)}${row + block - 1}`,
     );
-    writeTemplateCell(
-      book,
-      sh,
-      `${colName(firstCol)}${row + 3}`,
-      "实样粘贴区 / ATTACH PHYSICAL SWATCH",
-    );
+    writeTemplateCell(book, sh, `${colName(firstCol)}${row + 3}`, "实样粘贴区");
   });
   return true;
 }
@@ -2300,7 +2328,11 @@ export async function generateTemplateWorkbook(
 ) {
   const book = new TemplateBook(await JSZip.loadAsync(template));
   await book.initialize();
-  const warnings = [...missingSummary(data), ...annotationWarnings(figures)];
+  const warnings = [
+    ...missingSummary(data),
+    ...annotationWarnings(figures),
+    ...chineseExportWarnings(data),
+  ];
   const result: {
     name: string;
     area: string;
@@ -2368,6 +2400,10 @@ export async function generateTemplateWorkbook(
   for (const sh of book.sheets) {
     const snapshot = sh.snapshot();
     const role = templateRole(snapshot);
+    let protectedAfter =
+      role === "sample" ? sampleTotalRow(snapshot) : undefined;
+    const protectedRow = (row: number) =>
+      protectedAfter !== undefined && row > protectedAfter;
     const tables = templateTables(snapshot, role);
     const instructions = snapshot.cells.find((c) =>
       /所需信息|SWATCHINFORMATION/.test(normalizeLabel(c.value)),
@@ -2399,6 +2435,7 @@ export async function generateTemplateWorkbook(
       continue;
     }
     for (const cell of snapshot.cells) {
+      if (protectedRow(cell.row)) continue;
       if (/^#(?:VALUE!|NAME\?|REF!|DIV\/0!|N\/A)$/.test(String(cell.value))) {
         sh.set(cell.address, null);
         warnings.push(
@@ -2441,9 +2478,21 @@ export async function generateTemplateWorkbook(
         for (let row = footer.row; row < tables[index].row; row++)
           extraMetaRows.add(row);
     }
-    fillTemplateMeta(book, sh, data, metaEnd, warnings, extraMetaRows);
+    fillTemplateMeta(
+      book,
+      sh,
+      data,
+      metaEnd,
+      warnings,
+      extraMetaRows,
+      protectedAfter,
+    );
     for (const cell of sh.snapshot().cells)
-      if (cell.row > 1 && /DISPIMG/.test(String(cell.value)))
+      if (
+        !protectedRow(cell.row) &&
+        cell.row > 1 &&
+        /DISPIMG/.test(String(cell.value))
+      )
         sh.set(cell.address, null);
     const oldPictures = await sh.drawing(
       false,
@@ -2487,6 +2536,7 @@ export async function generateTemplateWorkbook(
       }
     } else if (role === "sample") {
       await fillSampleGrid(book, sh, data);
+      protectedAfter = sampleTotalRow(sh.snapshot());
     } else if (role === "swatches") {
       if (!(await fillSwatches(book, sh, data)))
         warnings.push(`「${sh.name}」未找到留卡信息区域，请核对填写结果。`);
@@ -2669,13 +2719,16 @@ export async function generateTemplateWorkbook(
     for (const formula of elements(sh.doc, "f")) {
       if (!/\[\d+\]/.test(formula.textContent || "")) continue;
       const address = (formula.parentNode as Element).getAttribute("r")!;
+      if (protectedRow(splitAddress(address).row)) continue;
       writeTemplateCell(book, sh, address, TBC);
       warnings.push(`「${sh.name}」${address} 的旧外部文件引用已置为待确认。`);
     }
     for (const cell of sh.snapshot().cells) {
+      if (protectedRow(cell.row)) continue;
       if (book.fontInfo(sh.style(cell.address)).vertical)
         writeTemplateCell(book, sh, cell.address, cell.value);
     }
+    localizeSheetLabels(sh, role);
     const bounds = sh.bounds();
     result.push({
       ...sh.print(`A1:${colName(bounds.col)}${bounds.row}`),

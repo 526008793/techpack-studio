@@ -10,7 +10,7 @@ export const EXTRACTION_PROMPT = `你是服装技术资料制单员。逐页读�
 规则：
 1. 只提取资料提供的事实。未提供的字符串和数字用null，不得沿用旧款、编造数量、交期、工厂、内部跟单或推算尺码。所有数组必须有实际含义，没有项目返回空数组。
 2. 材料逐项分开，面料1/2/3即使成分相同也必须独立。kind分为fabric/interlining/graphic/trim/label。不要自动编造衬；本地程序会增加待确认衬行。
-3. 英文名称/描述在En字段保留原文，中文字段用服装行业用语翻译。配色中的Pantone/TCX编码原样保留，多个配色按原顺序写colors；数量和规格不得互相混淆。
+3. CAD相关页和尺寸页需要中英文对照；其他页只填写中文。因此En字段仍保留原文供CAD、尺寸和核对使用，所有中文名称、规格、部位、单位、备注必须用服装行业用语完整翻译。colors使用中文色名并原样保留Pantone/TCX等色号，多个配色按原顺序写；品牌、款号、人名、尺码及必要技术编码保留原样；数量和规格不得互相混淆。数量搭配及打样要求页总计下方的模板说明由本地程序保留，不生成替代条款。
 4. measurements只填写实际提供的样码数值。所有英寸分数转为精确数值，如12 1/2=>12.5，1/8=>0.125。0与未提供必须区分。tolerance为正公差绝对值。原尺寸为文本无法数值化时value=null并在sourceValue保留原文。不将日期误当尺寸。unit必须与原资料一致。
 5. construction完整覆盖工艺要求，用titleZh/titleEn、detailZh/detailEn对应。标签参考图中“placeholder/reference only”的成分、产地、日期、款号、工厂等不能当作本款实际资料，在notes及missingItems标明。不得给固定风险评估会写虚构会议意见。
 6. figures找出款式彩色图appearance、工艺图construction、辅料参考trimReference、款式参考inspiration、唛头参考labels。page从1开始；box的x/y/width/height是相对整张页面的0~1坐标，从左上角起，裁掉重复页眉但保留该图完整说明。允许一个角色多张图片。不要把尺寸表当作款式图。

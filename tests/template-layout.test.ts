@@ -208,10 +208,10 @@ test("renamed sheets and reordered columns fill by labels and preserve unknown s
   assert.ok(output.warnings.some((warning) => warning.includes("业务备忘")));
   const bom = await values(saved, "xl/worksheets/sheet6.xml");
   assert.match(bom.get("F9")!, /面料1/);
-  assert.match(bom.get("B9")!, /NEW SPEC/);
-  assert.equal(bom.get("I9"), "NAVY");
-  assert.match(bom.get("E9")!, /BODY/);
-  assert.match([...bom.values()].join("\n"), /INTERLINING/);
+  assert.equal(bom.get("B9"), "新规格");
+  assert.equal(bom.get("I9"), "藏青色");
+  assert.equal(bom.get("E9"), "大身");
+  assert.ok([...bom.values()].includes("衬"));
   const specs = await values(saved, "xl/worksheets/sheet7.xml");
   assert.equal(specs.get("F9"), "44.25");
   assert.equal(specs.get("B9"), "0.25");
@@ -248,9 +248,61 @@ test("material row growth shifts original guidance and retains customer comments
     "meeting guidance remains a full-width merged row below the materials",
   );
   assert.match([...risk.values()].join("\n"), /面料5/);
-  assert.match([...risk.values()].join("\n"), /INTERLINING/);
+  assert.ok([...risk.values()].includes("衬"));
   assert.deepEqual(await values(saved, "xl/worksheets/sheet9.xml"), before);
   assert.equal(output.sheets.length, 2);
+});
+
+test("renamed sample pages preserve every footer cell and row format when colors add rows", async () => {
+  const zip = await fixture([["数量搭配及打样要求", "打样安排"]]);
+  const file = "xl/worksheets/sheet2.xml";
+  const doc = parse(await zip.file(file)!.async("string"));
+  const firstNote = nodes(doc, "c").find((c) => c.getAttribute("r") === "A10")!;
+  while (firstNote.firstChild) firstNote.removeChild(firstNote.firstChild);
+  firstNote.setAttribute("t", "inlineStr");
+  const inline = doc.createElementNS(firstNote.namespaceURI, "is");
+  const text = doc.createElementNS(firstNote.namespaceURI, "t");
+  text.setAttribute("xml:space", "preserve");
+  text.appendChild(
+    doc.createTextNode(
+      "  DATE: original terms / 客户原说明 PREPARED BY: 不修改  ",
+    ),
+  );
+  inline.appendChild(text);
+  firstNote.appendChild(inline);
+  const sourceRows = nodes(doc, "row")
+    .filter((r) => Number(r.getAttribute("r")) >= 10)
+    .map((r) => r.cloneNode(true));
+  zip.file(file, stringify(doc));
+  const input = data();
+  input.materials[0].colors = ["黑色", "白色", "红色", "蓝色", "绿色"];
+  input.meta.merchandiser = "NEW PERSON";
+  const output = await generateTemplateWorkbook(
+    await zip.generateAsync({ type: "nodebuffer" }),
+    input,
+  );
+  const saved = await JSZip.loadAsync(output.buffer);
+  const actual = parse(await saved.file(file)!.async("string"));
+  for (const sourceRow of sourceRows) {
+    const expected = sourceRow as ReturnType<typeof nodes>[number];
+    const oldRow = Number(expected.getAttribute("r"));
+    const shifted = nodes(actual, "row")
+      .find((r) => Number(r.getAttribute("r")) === oldRow + 3)!
+      .cloneNode(true) as typeof expected;
+    shifted.setAttribute("r", String(oldRow));
+    for (const c of Array.from(shifted.getElementsByTagNameNS("*", "c"))) {
+      const p = position(c.getAttribute("r")!);
+      c.setAttribute("r", `${col(p.col)}${p.row - 3}`);
+    }
+    assert.equal(
+      new XMLSerializer().serializeToString(shifted),
+      new XMLSerializer().serializeToString(expected),
+    );
+  }
+  assert.ok(
+    nodes(actual, "mergeCell").some((m) => m.getAttribute("ref") === "A13:I13"),
+  );
+  assert.equal(output.sheets[0].name, "打样安排");
 });
 
 test("renamed CAD pages embed only supplied new images with standard drawing content types", async () => {
@@ -367,9 +419,9 @@ test("consumption production quantity never uses material usage or sample quanti
   );
   const saved = await JSZip.loadAsync(output.buffer);
   const content = await values(saved, "xl/worksheets/sheet10.xml");
-  assert.equal(content.get("D6"), "待确认 / TBC");
-  assert.match(content.get("E6")!, /NEW SPEC/);
-  assert.match(content.get("E6")!, /NAVY/);
+  assert.equal(content.get("D6"), "待确认");
+  assert.match(content.get("E6")!, /新规格/);
+  assert.match(content.get("E6")!, /藏青色/);
 });
 
 test("blank footer labels fill adjacent values and old external links never survive", async () => {
@@ -433,9 +485,9 @@ test("blank footer labels fill adjacent values and old external links never surv
   );
   assert.ok(footer);
   assert.equal(consumption.get(`B${position(footer[0]).row}`), "NEW PERSON");
-  assert.equal(consumption.get("N2"), "待确认 / TBC");
+  assert.equal(consumption.get("N2"), "待确认");
   const swatches = await values(saved, "xl/worksheets/sheet11.xml");
-  assert.equal(swatches.get("B3"), "待确认 / TBC");
+  assert.equal(swatches.get("B3"), "待确认");
   for (const file of ["sheet10.xml", "sheet11.xml"]) {
     const doc = parse(
       await saved.file(`xl/worksheets/${file}`)!.async("string"),

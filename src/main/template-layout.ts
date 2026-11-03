@@ -6,6 +6,18 @@ export type TemplateCell = {
   endCol: number;
 };
 export type TemplateSheet = { name: string; cells: TemplateCell[] };
+export function sampleTotalRow(sheet: TemplateSheet): number | undefined {
+  const header = sheet.cells.find((cell) =>
+    /配色|COLORWAY/.test(normalizeLabel(cell.value)),
+  );
+  return sheet.cells
+    .filter(
+      (cell) =>
+        cell.row > (header?.row ?? 0) &&
+        /^(总计|合计|TOTAL|GRANDTOTAL)/.test(normalizeLabel(cell.value)),
+    )
+    .sort((a, b) => a.row - b.row)[0]?.row;
+}
 export type TemplateRole =
   | "cover"
   | "sample"

@@ -513,7 +513,7 @@ onUnmounted(() => removeProgress?.());
             <div>
               <span class="eyebrow">01 / 导入</span>
               <h1>开始一份新制单</h1>
-              <p>选择新收到的 PDF，按熟悉的 Excel 模板整理中英资料。</p>
+              <p>选择新收到的 PDF，CAD 和尺寸页中英对照，其余填写中文。</p>
             </div>
             <button class="secondary" @click="sample" :disabled="busy">
               查看 P4541 示例 <span>↗</span>
@@ -614,7 +614,7 @@ onUnmounted(() => removeProgress?.());
             <i>→</i>
             <div>
               <span>02</span><strong>核对内容</strong>
-              <p>中英对照，可逐项修改</p>
+              <p>CAD 和尺寸中英对照，其余中文，可逐项修改</p>
             </div>
             <i>→</i>
             <div>
@@ -1225,8 +1225,8 @@ onUnmounted(() => removeProgress?.());
               <span class="eyebrow">03 / 导出</span>
               <h1>{{ result ? "新制单已生成" : "准备导出制单" }}</h1>
               <p>
-                面辅料、工艺、尺寸及对应表按固定规则填写，保留可编辑的 Excel
-                格式。
+                CAD
+                相关页和尺寸页中英对照，其余填写中文。打样页总计下方说明、邮件页和风险指导原文保持模板内容。
               </p>
             </div>
           </div>

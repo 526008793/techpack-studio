@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
-import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer, type Element } from "@xmldom/xmldom";
 import {
   techPackSchema,
   normalizedMaterials,
@@ -59,6 +59,80 @@ test("template profile, fabric separation and single added interlining", async (
     ).length,
     1,
   );
+});
+
+test("CAD and measurements stay bilingual while other generated data is Chinese and sample notes stay exact", async () => {
+  const data = await fixture();
+  const template = await fs.readFile(
+    path.join(root, "resources/template.xlsx"),
+  );
+  const original = await JSZip.loadAsync(template);
+  const source = await xml(original, "xl/worksheets/sheet2.xml");
+  const serialize = (node: Parameters<XMLSerializer["serializeToString"]>[0]) =>
+    new XMLSerializer().serializeToString(node);
+  const footerRows = Array.from(
+    source.getElementsByTagNameNS("*", "row"),
+  ).filter((r) => Number(r.getAttribute("r")) > 9);
+  const footerMerges = Array.from(
+    source.getElementsByTagNameNS("*", "mergeCell"),
+  )
+    .map((m) => m.getAttribute("ref")!)
+    .filter((ref) => Number(ref.match(/\d+/)![0]) > 9);
+  for (const generate of [generateWorkbook, generateTemplateWorkbook]) {
+    const out = await generate(template, data);
+    const saved = await JSZip.loadAsync(out.buffer);
+    const sample = await xml(saved, "xl/worksheets/sheet2.xml");
+    for (const row of footerRows) {
+      const actual = Array.from(sample.getElementsByTagNameNS("*", "row")).find(
+        (r) => r.getAttribute("r") === row.getAttribute("r"),
+      );
+      assert.equal(
+        serialize(actual!),
+        serialize(row),
+        "sample footer values, rich text, formulas, style IDs and row sizing must stay intact",
+      );
+    }
+    const merges = Array.from(
+      sample.getElementsByTagNameNS("*", "mergeCell"),
+    ).map((m) => m.getAttribute("ref"));
+    assert.ok(footerMerges.every((m) => merges.includes(m)));
+    const bom = [
+      ...cells(await xml(saved, "xl/worksheets/sheet6.xml")).values(),
+    ].join("\n");
+    assert.doesNotMatch(
+      bom,
+      /BILL OF MATERIALS|FABRIC|POLYESTER|PLACEMENT|COLORWAY|INTERLINING|RAISIN|TBC/,
+    );
+    assert.match(bom, /面料1/);
+    assert.match(bom, /19-1606 TCX/);
+    const spec = [
+      ...cells(await xml(saved, "xl/worksheets/sheet7.xml")).values(),
+    ].join("\n");
+    assert.match(spec, /Waist Relaxed/i);
+    assert.match(spec, /腰/);
+    const cad = [
+      ...cells(await xml(saved, "xl/worksheets/sheet3.xml")).values(),
+    ].join("\n");
+    assert.match(cad, /FOLDED WAISTBAND/);
+    assert.match(cad, /腰头/);
+    const cover = [
+      ...cells(await xml(saved, "xl/worksheets/sheet1.xml")).values(),
+    ].join("\n");
+    assert.ok(cover.includes("P4541"));
+    assert.ok(cover.includes("UFC"));
+    assert.ok(!cover.includes(data.meta.descriptionEn!));
+    for (const file of [
+      "xl/worksheets/sheet2.xml",
+      "xl/worksheets/sheet10.xml",
+      "xl/worksheets/sheet11.xml",
+    ]) {
+      const text = [...cells(await xml(saved, file)).values()].join("\n");
+      assert.doesNotMatch(
+        text,
+        /\/\s*(?:DATE|STYLE|STAGE|MATERIAL|PLACEMENT|USE|UNIT|WIDTH|WARP|WEFT|NET USE|WASTE|QUOTED|COLORWAY|CUSTOMER|MERCH\.)\b/,
+      );
+    }
+  }
 });
 
 test("CAD translations are editable blue text boxes in both template engines; unrelated pages stay intact", async () => {
