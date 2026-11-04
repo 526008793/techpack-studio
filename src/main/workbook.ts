@@ -2230,6 +2230,12 @@ async function fillTemplateTable(
   const right = Math.max(...table.columns.map((c) => c.endCol));
   const allCells = sh.snapshot().cells;
   const consumption = templateRole(sh.snapshot()) === "consumption";
+  const styleColumn = consumption
+    ? table.columns.find((column) => column.field === "style")
+    : undefined;
+  const styleFormula = styleColumn
+    ? first(sh.cell(`${colName(styleColumn.col)}${firstRow}`), "f")?.textContent
+    : undefined;
   const source = allCells.filter(
     (c) => c.row >= firstRow && c.col >= left && c.col <= right,
   );
@@ -2299,6 +2305,15 @@ async function fillTemplateTable(
             ? base
             : undefined;
       if (value !== null) sh.showColumn(column.col);
+      if (consumption && column.field === "style" && styleFormula) {
+        // 同一款的所有耗料行都引用原款号；扩行不能把 D35 递增到制单人 D37。
+        const cell = sh.cell(address);
+        const previous = first(cell, "f");
+        if (previous) cell.removeChild(previous);
+        const formula = node(sh.doc, "f");
+        formula.textContent = styleFormula;
+        cell.insertBefore(formula, cell.firstChild);
+      }
       writeTemplateCell(book, sh, address, value, style);
     }
   }
