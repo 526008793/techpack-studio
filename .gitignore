@@ -2,5 +2,6 @@ node_modules/
 out/
 dist/
 output/
+techpack-studio-cache/
 *.log
 .DS_Store

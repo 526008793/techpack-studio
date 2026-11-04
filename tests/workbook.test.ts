@@ -61,7 +61,120 @@ test("template profile, fabric separation and single added interlining", async (
   );
 });
 
-test("CAD and measurements stay bilingual while other generated data is Chinese and sample notes stay exact", async () => {
+test("original formulas and borderless cells survive both engines; the swatch body stays blank", async () => {
+  const original = await JSZip.loadAsync(
+    await fs.readFile(path.join(root, "resources/template.xlsx")),
+  );
+  const data = await fixture();
+  data.materials = data.materials
+    .filter((m) => m.kind === "fabric")
+    .slice(0, 1);
+  data.measurements = data.measurements.slice(0, 2);
+  const sourceStyles = await xml(original, "xl/styles.xml");
+  const xfs = Array.from(
+    sourceStyles
+      .getElementsByTagNameNS("*", "cellXfs")[0]
+      .getElementsByTagNameNS("*", "xf"),
+  );
+  const borders = Array.from(
+    sourceStyles.getElementsByTagNameNS("*", "border"),
+  );
+  const sourceCard = await xml(original, "xl/worksheets/sheet11.xml");
+  const serialize = (element: Element) =>
+    new XMLSerializer().serializeToString(element);
+  const merges = (doc: typeof sourceCard) =>
+    Array.from(doc.getElementsByTagNameNS("*", "mergeCell")).map((m) =>
+      m.getAttribute("ref"),
+    );
+  for (const generate of [generateWorkbook, generateTemplateWorkbook]) {
+    const output = await generate(
+      await original.generateAsync({ type: "nodebuffer" }),
+      data,
+    );
+    const saved = await JSZip.loadAsync(output.buffer);
+    const styles = await xml(saved, "xl/styles.xml");
+    const savedXfs = Array.from(
+      styles
+        .getElementsByTagNameNS("*", "cellXfs")[0]
+        .getElementsByTagNameNS("*", "xf"),
+    );
+    const savedBorders = Array.from(
+      styles.getElementsByTagNameNS("*", "border"),
+    );
+    for (let index = 1; index <= 11; index++) {
+      const file = `xl/worksheets/sheet${index}.xml`;
+      const source = await xml(original, file),
+        result = await xml(saved, file);
+      const actual = new Map(
+        Array.from(result.getElementsByTagNameNS("*", "c")).map((c) => [
+          c.getAttribute("r"),
+          c,
+        ]),
+      );
+      for (const cell of Array.from(source.getElementsByTagNameNS("*", "c"))) {
+        const address = cell.getAttribute("r")!;
+        const formula = cell.getElementsByTagNameNS("*", "f")[0];
+        if (formula?.textContent?.trim()) {
+          assert.equal(
+            actual.get(address)?.getElementsByTagNameNS("*", "f")[0]
+              ?.textContent,
+            formula.textContent,
+            `${file}!${address}: preserve original formula`,
+          );
+        }
+        const border =
+          borders[
+            Number(
+              xfs[Number(cell.getAttribute("s") || 0)].getAttribute(
+                "borderId",
+              ) || 0,
+            )
+          ];
+        if (
+          !Array.from(border.getElementsByTagNameNS("*", "*")).some((edge) =>
+            edge.hasAttribute("style"),
+          ) &&
+          actual.has(address)
+        ) {
+          const xf =
+            savedXfs[Number(actual.get(address)!.getAttribute("s") || 0)];
+          assert.equal(
+            serialize(savedBorders[Number(xf.getAttribute("borderId") || 0)]),
+            serialize(border),
+            `${file}!${address}: do not add borders`,
+          );
+        }
+      }
+    }
+    const card = await xml(saved, "xl/worksheets/sheet11.xml");
+    assert.deepEqual(merges(card), merges(sourceCard));
+    for (const cell of Array.from(card.getElementsByTagNameNS("*", "c"))) {
+      const address = cell.getAttribute("r")!;
+      if (/^[A-J]\d+$/.test(address) && Number(address.match(/\d+/)![0]) >= 5) {
+        assert.equal(
+          cell.childNodes.length,
+          0,
+          `Swatch body must stay blank: ${address}`,
+        );
+      }
+    }
+    const rows = (doc: typeof card) =>
+      Array.from(doc.getElementsByTagNameNS("*", "row"))
+        .filter((r) => Number(r.getAttribute("r")) >= 5)
+        .map((r) => [
+          r.getAttribute("r"),
+          r.getAttribute("ht"),
+          r.getAttribute("customHeight"),
+        ]);
+    assert.deepEqual(
+      rows(card),
+      rows(sourceCard),
+      "blank swatch body keeps row sizes",
+    );
+  }
+});
+
+test("measurements stay bilingual while CAD has no construction list, other data is Chinese and sample notes stay exact", async () => {
   const data = await fixture();
   const template = await fs.readFile(
     path.join(root, "resources/template.xlsx"),
@@ -113,8 +226,7 @@ test("CAD and measurements stay bilingual while other generated data is Chinese 
     const cad = [
       ...cells(await xml(saved, "xl/worksheets/sheet3.xml")).values(),
     ].join("\n");
-    assert.match(cad, /FOLDED WAISTBAND/);
-    assert.match(cad, /腰头/);
+    assert.doesNotMatch(cad, /FOLDED WAISTBAND|腰头/);
     const cover = [
       ...cells(await xml(saved, "xl/worksheets/sheet1.xml")).values(),
     ].join("\n");
@@ -145,6 +257,12 @@ test("CAD translations are editable blue text boxes in both template engines; un
       detailZh: "腰头内包橡筋",
       detailEn: "ENCASED ELASTIC",
     },
+    {
+      titleZh: "未标注脚口",
+      titleEn: "UNANNOTATED HEM",
+      detailZh: "脚口不再补写到图下",
+      detailEn: "HEM DETAILS MUST NOT BE WRITTEN BELOW",
+    },
   ];
   const image = {
     role: "construction" as const,
@@ -154,6 +272,9 @@ test("CAD translations are editable blue text boxes in both template engines; un
         "base64",
       ),
     caption: "",
+    unplacedAnnotations: [
+      { textZh: "未放下的袋布译文", textEn: "UNPLACED POCKET BAG" },
+    ],
     annotations: [
       {
         textZh: "腰头内包橡筋",
@@ -173,6 +294,7 @@ test("CAD translations are editable blue text boxes in both template engines; un
     const output = await generate(template, data, [
       image,
       { ...image, role: "trimReference" as const },
+      { ...image, role: "labels" as const, annotations: [] },
     ]);
     const zip = await JSZip.loadAsync(output.buffer);
     const drawings = await Promise.all(
@@ -210,11 +332,52 @@ test("CAD translations are editable blue text boxes in both template engines; un
         "0000CC",
       );
     }
-    const cad = cells(await xml(zip, "xl/worksheets/sheet3.xml"));
-    assert.ok(
-      ![...cad.values()].some((value) => value.includes("ENCASED ELASTIC")),
-      "fully annotated text is not repeated below CAD",
+    const styles = await xml(zip, "xl/styles.xml");
+    const xfs = Array.from(
+      styles
+        .getElementsByTagNameNS("*", "cellXfs")[0]
+        .getElementsByTagNameNS("*", "xf"),
     );
+    const borders = Array.from(styles.getElementsByTagNameNS("*", "border"));
+    for (let index = 3; index <= 5; index++) {
+      const sheet = await xml(zip, `xl/worksheets/sheet${index}.xml`);
+      const text = [...cells(sheet).values()].join("\n");
+      assert.doesNotMatch(
+        text,
+        /ENCASED ELASTIC|UNANNOTATED HEM|UNPLACED POCKET BAG|未放下的袋布译文|脚口不再补写到图下|UFC HANGTAG/,
+        "neither placed nor pending translations or label specifications go below CAD",
+      );
+      for (const cell of Array.from(sheet.getElementsByTagNameNS("*", "c"))) {
+        const row = Number(cell.getAttribute("r")!.match(/\d+/)![0]);
+        const xf = xfs[Number(cell.getAttribute("s") || 0)];
+        const border = borders[Number(xf.getAttribute("borderId") || 0)];
+        if (row >= 4)
+          assert.ok(
+            !Array.from(border.getElementsByTagNameNS("*", "*")).some((edge) =>
+              edge.hasAttribute("style"),
+            ),
+            `CAD image area must have no borders: sheet${index}!${cell.getAttribute("r")}`,
+          );
+      }
+      for (const address of ["A1", "A2", "A3"])
+        assert.notEqual(
+          xfs[
+            Number(
+              Array.from(sheet.getElementsByTagNameNS("*", "c"))
+                .find((c) => c.getAttribute("r") === address)!
+                .getAttribute("s"),
+            )
+          ].getAttribute("borderId"),
+          "0",
+          "keep header borders",
+        );
+      assert.equal(
+        sheet
+          .getElementsByTagNameNS("*", "sheetView")[0]
+          .getAttribute("showGridLines"),
+        "0",
+      );
+    }
     const original = await JSZip.loadAsync(template);
     assert.deepEqual(
       [...cells(await xml(zip, "xl/worksheets/sheet9.xml"))].filter(

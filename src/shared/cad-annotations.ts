@@ -1,10 +1,4 @@
-import type {
-  Box,
-  Figure,
-  FigureImage,
-  PlacedAnnotation,
-  TechPack,
-} from "./model";
+import type { Box, Figure, FigureImage, PlacedAnnotation } from "./model";
 
 export const CAD_FONT = '"Microsoft YaHei", "PingFang SC", sans-serif';
 export const CAD_COLOR = "#0000CC";
@@ -221,32 +215,11 @@ export function placeAnnotations(
       });
     } else {
       warnings.push(
-        `第${figure.page}页「${annotation.textEn}」附近空间不足，中文已列在图下，请在 Excel 中核对排版。`,
+        `第${figure.page}页「${annotation.textEn}」附近空间不足，中文未能放到图上，请调整裁剪或在 Excel 中补充标注。`,
       );
     }
   }
   return { annotations, warnings };
-}
-
-const normalize = (text: string) =>
-  text.toUpperCase().replace(/[^\p{L}\p{N}]/gu, "");
-// 只消除已完整写到图中的工艺说明；局部标注不能让未呈现的要求丢失。
-export function remainingConstruction(data: TechPack, figures: FigureImage[]) {
-  const texts = figures.flatMap((f) =>
-    (f.annotations || []).map((a) => ({
-      en: normalize(a.textEn),
-      zh: normalize(a.textZh),
-    })),
-  );
-  return data.construction.filter((item) => {
-    const detail = normalize(item.detailEn || "");
-    const detailZh = normalize(item.detailZh || "");
-    return !texts.some(
-      (text) =>
-        (detail && text.en.includes(detail)) ||
-        (detailZh && text.zh.includes(detailZh)),
-    );
-  });
 }
 
 export function annotationWarnings(figures: FigureImage[]): string[] {
@@ -260,28 +233,7 @@ export function annotationWarnings(figures: FigureImage[]): string[] {
     )
   )
     warnings.push(
-      "工艺图没有可定位的中文标注，文字说明保留在图下；旧资料请重新识别以获取图中标注位置，也可在 Excel 中手工添加。",
+      "工艺图没有可定位的中文标注；旧资料请重新识别以获取图中标注位置，也可在 Excel 中手工添加。",
     );
   return [...new Set(warnings)];
-}
-
-export function unplacedAnnotationRows(
-  figures: FigureImage[],
-  pending: TechPack["construction"],
-) {
-  const seen = new Set<string>();
-  return figures
-    .flatMap((f) => f.unplacedAnnotations || [])
-    .filter((annotation) => {
-      const zh = normalize(annotation.textZh),
-        en = normalize(annotation.textEn);
-      const key = zh + ":" + en;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return !pending.some(
-        (item) =>
-          (zh && zh === normalize(item.detailZh || "")) ||
-          (en && en === normalize(item.detailEn || "")),
-      );
-    });
 }

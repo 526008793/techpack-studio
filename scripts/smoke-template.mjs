@@ -109,7 +109,11 @@ try {
   await page
     .getByRole("heading", { name: "新制单已生成", exact: true })
     .waitFor({ timeout: 60000 });
-  assert.equal(await page.locator(".sheet-list > div").count(), 12);
+  assert.equal(await page.locator(".print-summary").count(), 0);
+  assert.equal(
+    await page.getByRole("heading", { name: "需要核对的项目" }).count(),
+    0,
+  );
   assert.equal(requests, 1);
   const zip = await JSZip.loadAsync(await fs.readFile(destination));
   const book = await zip.file("xl/workbook.xml").async("string");

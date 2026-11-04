@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   emptyTechPack,
   normalizedMaterials,
   missingSummary,
   techPackSchema,
-  DEFAULT_TEMPLATE_RULES,
   type TechPack,
   type SelectedFile,
   type PdfPage,
@@ -13,6 +12,7 @@ import {
   type Figure,
   type ExportSummary,
   type ApiSettings,
+  type CacheSettings,
 } from "../../shared/model";
 import { readPdf, previewFigure, exportFigures, parseDimension } from "./pdf";
 import brandIconUrl from "../../../build/icon.png?url";
@@ -40,6 +40,12 @@ const settingsOpen = ref(false),
   keyInput = ref(""),
   clearKey = ref(false);
 const openMaterial = ref(0);
+const cacheSettings = ref<CacheSettings>({
+  directory: "",
+  defaultDirectory: "",
+});
+const cacheBusy = ref(false),
+  cacheMessage = ref("");
 const settings = ref<ApiSettings>({
   protocol: "responses",
   baseUrl: "https://api.openai.com/v1",
@@ -56,17 +62,6 @@ const tabs = [
   ["construction", "工艺要求"],
   ["figures", "图片参考"],
 ];
-const rules = computed(
-  () => settings.value.templateRules ?? DEFAULT_TEMPLATE_RULES,
-);
-const selectedRule = ref<number | null>(null),
-  editingRule = ref<number | null>(null),
-  ruleDraft = ref(""),
-  savingRules = ref(false),
-  ruleMenu = ref<{ index: number; x: number; y: number } | null>(null);
-const ruleRows = computed(() =>
-  editingRule.value === rules.value.length ? [...rules.value, ""] : rules.value,
-);
 const kindNames: Record<Material["kind"], string> = {
   fabric: "面料",
   interlining: "衬",
@@ -212,7 +207,6 @@ async function saveSettings() {
     try {
       const payload = {
         ...settings.value,
-        templateRules: [...rules.value],
         apiKey: clearKey.value ? "" : keyInput.value.trim() || undefined,
       };
       settings.value = await api.saveSettings(payload);
@@ -225,55 +219,39 @@ async function saveSettings() {
     }
   });
 }
-function editRule(index: number) {
-  if (savingRules.value || busy.value) return;
-  selectedRule.value = index;
-  editingRule.value = index;
-  ruleDraft.value = rules.value[index] ?? "";
-  ruleMenu.value = null;
-  void nextTick(() =>
-    document.querySelector<HTMLTextAreaElement>(".rule-editor")?.focus(),
-  );
-}
-async function saveRules(next: string[]) {
-  savingRules.value = true;
+async function changeCache(mode: "choose" | "reset" | "clear") {
+  cacheBusy.value = true;
+  cacheMessage.value = "";
   await action(async () => {
     try {
-      // 只替换规则清单；沿用已保存的模型设置和主进程中的密钥。
-      settings.value = await api.saveSettings({
-        ...settings.value,
-        templateRules: next,
-      });
+      if (mode === "clear") {
+        const count = await api.clearCache();
+        cacheMessage.value = `已清理 ${count} 个缓存文件，下次识别会重新调用 AI。`;
+        notice.value = cacheMessage.value;
+      } else {
+        const value =
+          mode === "choose"
+            ? await api.chooseCacheDirectory()
+            : await api.resetCacheDirectory();
+        if (value) {
+          cacheSettings.value = value;
+          cacheMessage.value = "缓存位置已保存，立即生效。";
+        }
+      }
     } finally {
-      savingRules.value = false;
+      cacheBusy.value = false;
     }
   });
 }
-async function commitRule() {
-  const index = editingRule.value;
-  if (index === null) return;
-  const text = ruleDraft.value.trim();
-  editingRule.value = null;
-  if (!text || rules.value[index] === text) return;
-  const next = [...rules.value];
-  next[index] = text;
-  await saveRules(next);
-}
-function openRuleMenu(event: MouseEvent, index: number) {
-  if (savingRules.value || busy.value || editingRule.value !== null) return;
-  selectedRule.value = index;
-  ruleMenu.value = {
-    index,
-    x: Math.min(event.clientX, window.innerWidth - 130),
-    y: Math.min(event.clientY, window.innerHeight - 55),
-  };
-}
-async function deleteRule() {
-  const index = ruleMenu.value?.index;
-  ruleMenu.value = null;
-  if (index === undefined || savingRules.value) return;
-  selectedRule.value = null;
-  await saveRules(rules.value.filter((_, i) => i !== index));
+async function uninstallApp() {
+  cacheBusy.value = true;
+  await action(async () => {
+    try {
+      await api.uninstallApp();
+    } finally {
+      cacheBusy.value = false;
+    }
+  });
 }
 function addMaterial() {
   data.value.materials.push({
@@ -377,18 +355,17 @@ onMounted(() => {
   }
   removeProgress = api.onProgress((text) => (status.value = text));
   void action(async () => {
-    settings.value = await api.settings();
+    [settings.value, cacheSettings.value] = await Promise.all([
+      api.settings(),
+      api.cacheSettings(),
+    ]);
   });
 });
 onUnmounted(() => removeProgress?.());
 </script>
 
 <template>
-  <div
-    class="app-shell"
-    @click="ruleMenu = null"
-    @keydown.esc="ruleMenu = null"
-  >
+  <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
         <img class="brand-icon" :src="brandIconUrl" alt="ZHH" />
@@ -410,73 +387,20 @@ onUnmounted(() => removeProgress?.());
           ><span v-if="step === index + 1" class="nav-dot"></span>
         </button>
       </nav>
-      <div class="sidebar-rule">
-        <div class="rule-heading">
-          <span class="eyebrow">已保存的模板规则</span>
-          <button
-            class="rule-add"
-            aria-label="新增模板规则"
-            title="新增一行规则"
-            :disabled="busy || savingRules || editingRule !== null"
-            @click.stop="editRule(rules.length)"
-          >
-            ＋
-          </button>
-        </div>
-        <ul class="rule-list" aria-label="已保存的模板规则">
-          <li
-            v-for="(rule, index) in ruleRows"
-            :key="index"
-            :class="{
-              selected: selectedRule === index,
-              editing: editingRule === index,
-            }"
-            tabindex="0"
-            @click="selectedRule = index"
-            @dblclick="editRule(index)"
-            @keydown.enter.self.prevent="editRule(index)"
-            @contextmenu.prevent.stop="openRuleMenu($event, index)"
-          >
-            <i>✓</i>
-            <textarea
-              v-if="editingRule === index"
-              v-model="ruleDraft"
-              class="rule-editor"
-              aria-label="模板规则内容"
-              rows="3"
-              placeholder="输入规则，按 Enter 保存"
-              @blur="commitRule"
-              @keydown.enter.exact.stop.prevent="commitRule"
-              @keydown.esc.stop.prevent="editingRule = null"
-              @click.stop
-              @dblclick.stop
-              @contextmenu.stop
-            ></textarea>
-            <span v-else>{{ rule }}</span>
-          </li>
-        </ul>
-        <small class="rule-hint">{{
-          savingRules ? "正在保存…" : "＋新增 · 双击修改 · 右键删除"
-        }}</small>
-      </div>
       <div class="sidebar-bottom">
+        <button
+          class="settings-link"
+          @click="changeCache('clear')"
+          :disabled="busy || cacheBusy"
+        >
+          <span>⌫</span> 清除缓存
+        </button>
         <button class="settings-link" @click="settingsOpen = true">
           <span>⚙</span> 模型与 API 设置
           <b v-if="settings.hasApiKey" class="connected-dot"></b></button
         ><small>本地文件处理 · v{{ appVersion }}</small>
       </div>
     </aside>
-
-    <div
-      v-if="ruleMenu"
-      class="rule-context-menu"
-      role="menu"
-      aria-label="模板规则操作"
-      :style="{ left: `${ruleMenu.x}px`, top: `${ruleMenu.y}px` }"
-      @click.stop
-    >
-      <button role="menuitem" @click="deleteRule">删除</button>
-    </div>
 
     <main class="main">
       <header class="topbar">
@@ -582,7 +506,7 @@ onUnmounted(() => removeProgress?.());
                       : "内置 11 页模板"
                   }}</strong
                   ><span>面辅料 · 尺寸 · 工艺 · 耗料 · 留卡</span
-                  ><small>A4 单页打印 / 工作表</small>
+                  ><small>Excel 页面自动适配</small>
                 </div>
               </div>
               <div class="template-actions">
@@ -601,8 +525,8 @@ onUnmounted(() => removeProgress?.());
                 </button>
               </div>
               <small class="hint"
-                >自定义模板按表头和标签定位，保留原有工作表和顺序。未识别的区域会提示核对。旧版
-                .xls 可通过已安装的 Excel / LibreOffice 转换。</small
+                >自定义模板按表头和标签定位，保留原有工作表和顺序。旧版 .xls
+                会在本地自动转换，原模板文件不会被覆盖。</small
               >
             </section>
           </div>
@@ -1252,40 +1176,6 @@ onUnmounted(() => removeProgress?.());
               </button>
             </div>
           </section>
-          <section class="print-summary" v-if="result">
-            <div class="section-heading">
-              <h2>打印设置</h2>
-              <span
-                >{{ result.sheets.length }} 个工作表 · 已匹配的表按 A4
-                单页打印</span
-              >
-            </div>
-            <div class="sheet-list">
-              <div v-for="sheet in result.sheets" :key="sheet.name">
-                <span class="sheet-symbol">▤</span
-                ><strong>{{ sheet.name }}</strong
-                ><span>{{
-                  sheet.matched === false
-                    ? "保留原设置"
-                    : sheet.orientation === "portrait"
-                      ? "纵向"
-                      : "横向"
-                }}</span
-                ><small>{{
-                  sheet.matched === false ? "未自动填写" : "1 页"
-                }}</small>
-              </div>
-            </div>
-            <p class="hint">
-              实际字体由电脑上的 Excel / WPS 决定，打印前可再查看一次打印预览。
-            </p>
-          </section>
-          <section class="missing-panel" v-if="result?.warnings.length">
-            <h2>需要核对的项目</h2>
-            <p v-for="(warning, index) in result.warnings" :key="index">
-              {{ warning }}
-            </p>
-          </section>
           <div class="bottom-action">
             <div>
               <strong>这份资料已可继续修改</strong
@@ -1382,6 +1272,62 @@ onUnmounted(() => removeProgress?.());
           Key 不会写入导出的 Excel
           或资料文件。使用自己的模型服务，费用按服务商规则计算。
         </p>
+        <section class="cache-settings">
+          <h3>缓存与本机数据</h3>
+          <label
+            >识别缓存目录<input
+              aria-label="识别缓存目录"
+              :value="cacheSettings.directory"
+              readonly
+          /></label>
+          <div class="cache-actions">
+            <button
+              class="secondary"
+              @click="changeCache('choose')"
+              :disabled="busy || cacheBusy"
+            >
+              更改位置
+            </button>
+            <button
+              class="text-button"
+              @click="changeCache('reset')"
+              :disabled="
+                busy ||
+                cacheBusy ||
+                cacheSettings.directory === cacheSettings.defaultDirectory
+              "
+            >
+              恢复默认
+            </button>
+            <button
+              class="text-button"
+              @click="changeCache('clear')"
+              :disabled="busy || cacheBusy"
+            >
+              清除缓存
+            </button>
+          </div>
+          <p class="hint">
+            默认缓存在安装目录下的 techpack-studio-cache
+            文件夹。更改位置后使用新目录；卸载会删除所有用过的专用缓存目录及 API
+            配置。
+          </p>
+          <p v-if="cacheMessage" class="cache-message" role="status">
+            {{ cacheMessage }}
+          </p>
+          <template v-if="api.platform === 'darwin'">
+            <button
+              class="text-button uninstall-button"
+              @click="uninstallApp"
+              :disabled="busy || cacheBusy"
+            >
+              卸载并清除本机数据
+            </button>
+            <p class="hint">
+              Mac 使用此入口退出并删除程序、专用缓存和本机配置。
+            </p>
+          </template>
+        </section>
         <div class="modal-actions">
           <button class="secondary" @click="settingsOpen = false">取消</button
           ><button

@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import {
   techPackSchema,
   type ApiSettings,
@@ -26,6 +27,7 @@ import {
   inspectTemplate,
 } from "./workbook";
 import { readTemplateFile } from "./convert";
+import { CacheStore } from "./cache";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const resources = app.isPackaged
@@ -34,13 +36,26 @@ const resources = app.isPackaged
 if (process.env.TECHPACK_USER_DATA)
   app.setPath("userData", process.env.TECHPACK_USER_DATA);
 let window: BrowserWindow | null = null,
-  settings: SettingsStore;
+  settings: SettingsStore,
+  cache: CacheStore;
 const files = new Map<string, SelectedFile>(),
   templates = new Map<string, Buffer>(),
   exports = new Set<string>();
 let controller: AbortController | null = null;
+let changingCache = false;
 const send = (text: string) =>
   window?.webContents.send("techpack:progress", text);
+
+async function manageCache<T>(operation: () => Promise<T>): Promise<T> {
+  if (controller || changingCache)
+    throw new Error("请先等待识别或缓存操作完成。");
+  changingCache = true;
+  try {
+    return await operation();
+  } finally {
+    changingCache = false;
+  }
+}
 
 function handle(name: string, fn: (...args: any[]) => unknown) {
   ipcMain.handle("techpack:" + name, async (event, ...args) => {
@@ -93,7 +108,22 @@ function register() {
     if (result.canceled) return null;
     const name = path.basename(result.filePaths[0]);
     try {
-      const bytes = await readTemplateFile(result.filePaths[0]);
+      const bytes = await readTemplateFile(
+        result.filePaths[0],
+        app.isPackaged
+          ? process.platform === "darwin"
+            ? path.join(
+                process.resourcesPath,
+                "converter/LibreOffice.app/Contents/MacOS/soffice",
+              )
+            : process.platform === "win32"
+              ? path.join(
+                  process.resourcesPath,
+                  "converter/LibreOffice/program/soffice.exe",
+                )
+              : undefined
+          : undefined,
+      );
       const sheets = await inspectTemplate(bytes),
         id = randomUUID();
       templates.set(id, bytes);
@@ -106,6 +136,63 @@ function register() {
   });
   handle("settings", () => settings.public());
   handle("save-settings", (next: ApiSettings) => settings.save(next));
+  handle("cache-settings", () => cache.public());
+  handle("choose-cache-directory", () =>
+    manageCache(async () => {
+      const result = await dialog.showOpenDialog(window!, {
+        title: "选择缓存保存位置（会创建专用子目录）",
+        properties: ["openDirectory", "createDirectory"],
+      });
+      return result.canceled
+        ? null
+        : cache.changeDirectory(
+            path.join(result.filePaths[0], "techpack-studio-cache"),
+          );
+    }),
+  );
+  handle("reset-cache-directory", () =>
+    manageCache(() => cache.changeDirectory(cache.defaultDirectory)),
+  );
+  handle("clear-cache", () => manageCache(() => cache.clearCurrent()));
+  handle("uninstall-app", () =>
+    manageCache(async () => {
+      if (process.platform !== "darwin" || !app.isPackaged)
+        throw new Error("请通过系统的应用卸载入口卸载安装版本。");
+      const choice = await dialog.showMessageBox(window!, {
+        type: "warning",
+        message: "卸载制单助手并清除本机数据？",
+        detail:
+          "将删除程序、全部专用缓存目录、日志、API Key 和模型配置。已导出的 Excel 和自行保存的资料文件会保留。",
+        buttons: ["取消", "卸载并清除"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (choice.response !== 1) return;
+      await cache.clearAll();
+      const bundle = path.dirname(path.dirname(path.dirname(process.execPath)));
+      // 由独立进程等待退出后清除，避免 Chromium 重建配置或残留正在使用的文件。
+      const cleanup = spawn(
+        "/bin/sh",
+        [
+          "-c",
+          'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done\n/bin/rm -rf -- "$2" "$3" "$4"',
+          "techpack-uninstall",
+          String(process.pid),
+          bundle,
+          app.getPath("userData"),
+          app.getPath("logs"),
+        ],
+        { detached: true, stdio: "ignore" },
+      );
+      await new Promise<void>((resolve, reject) => {
+        cleanup.once("spawn", resolve);
+        cleanup.once("error", reject);
+      });
+      cleanup.unref();
+      app.exit(0);
+    }),
+  );
   handle("cancel-analysis", () => {
     controller?.abort();
   });
@@ -114,18 +201,26 @@ function register() {
     async (request: { fileId: string; pages: PdfPage[]; force: boolean }) => {
       const file = files.get(request.fileId);
       if (!file) throw new Error("请重新选择PDF文件");
-      if (controller) throw new Error("已有资料正在识别，请等待完成或取消。");
+      if (controller || changingCache)
+        throw new Error("已有任务正在处理，请等待完成或取消。");
       const config = settings.privateSettings(),
         key = cacheKey(file.sha256, config);
       if (!request.force) {
-        const cached = await readCache(app.getPath("userData"), key);
+        const cached = await readCache(cache.directory, key);
         if (cached) {
           send("已读取本地识别缓存");
           return { data: cached, cached: true };
         }
       }
       controller = new AbortController();
-      const timer = setTimeout(() => controller?.abort(), 10 * 60 * 1000);
+      let timedOut = false;
+      const timer = setTimeout(
+        () => {
+          timedOut = true;
+          controller?.abort();
+        },
+        10 * 60 * 1000,
+      );
       try {
         send("正在识别资料、尺寸和图片，并整理中英对照…");
         const data = await extractTechPack(
@@ -135,9 +230,15 @@ function register() {
           // 使用 Chromium 网络栈，跟随 Windows 等系统的代理配置。
           (url, options) => net.fetch(url, options),
         );
-        await writeCache(app.getPath("userData"), key, data);
+        await writeCache(cache.directory, key, data);
         send("识别完成，请核对资料");
         return { data, cached: false };
+      } catch (error) {
+        if (timedOut)
+          throw new Error(
+            "本次识别超过程序的 10 分钟等待时间。可以重试，或在模型设置中调整推理强度；本次失败未写入缓存。",
+          );
+        throw error;
       } finally {
         clearTimeout(timer);
         controller = null;
@@ -167,7 +268,7 @@ function register() {
         filters: [{ name: "Excel工作簿", extensions: ["xlsx"] }],
       });
       if (result.canceled || !result.filePath) return null;
-      send("正在填写模板、替换图片并设置A4单页打印…");
+      send("正在填写模板、替换图片并整理 Excel 页面…");
       const output = request.templateId
         ? await generateTemplateWorkbook(template, data, request.figures)
         : await generateWorkbook(template, data, request.figures);
@@ -179,8 +280,6 @@ function register() {
       return {
         path: result.filePath,
         name: path.basename(result.filePath),
-        sheets: output.sheets,
-        warnings: output.warnings,
       };
     },
   );
@@ -274,8 +373,15 @@ else {
     if (process.platform === "win32")
       app.setAppUserModelId("local.techpack.studio");
     settings = new SettingsStore(app.getPath("userData"), safeStorage);
+    const installDirectory = app.isPackaged
+      ? process.platform === "darwin"
+        ? path.resolve(process.execPath, "../../../..")
+        : path.dirname(process.execPath)
+      : app.getAppPath();
+    cache = new CacheStore(app.getPath("userData"), installDirectory);
     try {
       await settings.load();
+      await cache.load();
     } catch (error) {
       dialog.showErrorBox(
         "模型设置",

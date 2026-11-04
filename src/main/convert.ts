@@ -6,7 +6,10 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 const run = promisify(execFile);
 
-export async function readTemplateFile(file: string): Promise<Buffer> {
+export async function readTemplateFile(
+  file: string,
+  bundledConverter?: string,
+): Promise<Buffer> {
   if (path.extname(file).toLowerCase() === ".xlsx") return fs.readFile(file);
   if (path.extname(file).toLowerCase() !== ".xls")
     throw new Error("请选择 .xlsx 或 .xls 制单模板");
@@ -14,8 +17,10 @@ export async function readTemplateFile(file: string): Promise<Buffer> {
   try {
     const copied = path.join(dir, "template.xls");
     await fs.copyFile(file, copied);
-    const candidates =
-      process.platform === "win32"
+    // 安装包携带对应平台的本地转换组件；优先使用随App移动的相对资源路径。
+    const candidates = [
+      ...(bundledConverter ? [bundledConverter] : []),
+      ...(process.platform === "win32"
         ? [
             path.join(
               process.env.ProgramFiles || "C:\\Program Files",
@@ -32,13 +37,18 @@ export async function readTemplateFile(file: string): Promise<Buffer> {
           ]
         : process.platform === "darwin"
           ? ["/Applications/LibreOffice.app/Contents/MacOS/soffice"]
-          : ["/usr/bin/libreoffice"];
+          : ["/usr/bin/libreoffice"]),
+    ];
     for (const executable of candidates) {
       try {
         await fs.access(executable);
       } catch {
         continue;
       }
+      console.info("[template:convert]", {
+        extension: ".xls",
+        converter: executable === bundledConverter ? "bundled" : "installed",
+      });
       await run(
         executable,
         [
@@ -79,7 +89,9 @@ export async function readTemplateFile(file: string): Promise<Buffer> {
         );
       }
     }
-    throw new Error("请把旧版 .xls 模板另存为 .xlsx，或使用内置模板。");
+    throw new Error(
+      "本地 XLS 转换组件未找到，请重新安装包含转换组件的制单助手，或选择 .xlsx 模板。",
+    );
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

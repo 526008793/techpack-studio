@@ -1,13 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { emptyTechPack, figureSchema, type Figure } from "../src/shared/model";
+import { figureSchema, type Figure } from "../src/shared/model";
 import {
   overlaps,
   placeAnnotations,
-  remainingConstruction,
   validBox,
   wrapAnnotation,
-  unplacedAnnotationRows,
 } from "../src/shared/cad-annotations";
 
 const figure = (): Figure =>
@@ -78,53 +76,10 @@ test("crowded diagrams and cropped English produce explicit warnings without ove
   assert.equal(cropped.annotations.length, 0);
   assert.match(cropped.warnings[0], /超出裁图/);
 });
-test("wrapping retains dimensions and only fully rendered construction descriptions are removed", () => {
+test("wrapping retains dimensions and units", () => {
   const text = "脚口宽1英寸，压1/4英寸单针";
   const lines = wrapAnnotation(text, 100, (s) => [...s].length * 20);
   assert.equal(lines.join(""), text);
   assert.ok(lines.some((s) => s.includes("1/4英寸")));
   assert.ok(lines.every((s) => [...s].length * 20 <= 100));
-  const data = emptyTechPack();
-  data.construction = [
-    {
-      titleZh: "脚口",
-      titleEn: "HEM",
-      detailZh: text,
-      detailEn: "1 INCH HEM; 1/4 INCH SINGLE NEEDLE",
-    },
-  ];
-  const image = {
-    role: "construction" as const,
-    data: "",
-    caption: "",
-    annotations: [
-      {
-        textZh: "脚口宽1英寸",
-        textEn: "1 INCH HEM",
-        box: { x: 0, y: 0, width: 0.2, height: 0.1 },
-        fontSize: 20,
-      },
-    ],
-  };
-  assert.equal(remainingConstruction(data, [image]).length, 1);
-  image.annotations[0].textEn = data.construction[0].detailEn!;
-  assert.equal(remainingConstruction(data, [image]).length, 0);
-  const fallback = {
-    ...image,
-    unplacedAnnotations: [
-      {
-        textZh: data.construction[0].detailZh!,
-        textEn: data.construction[0].detailEn!,
-      },
-      { textZh: "面料3：袋布", textEn: "FABRIC 3: PKT BAG" },
-    ],
-  };
-  assert.equal(
-    unplacedAnnotationRows([fallback, fallback], data.construction).length,
-    1,
-  );
-  assert.equal(
-    unplacedAnnotationRows([fallback], [])[0].textZh,
-    data.construction[0].detailZh,
-  );
 });

@@ -1,6 +1,6 @@
 {
   "name": "techpack-studio",
-  "version": "1.0.6",
+  "version": "1.0.11",
   "private": true,
   "description": "PDF服装资料转中英对照Excel制单",
   "author": "Local Tools",
@@ -71,7 +71,13 @@
       ],
       "signExecutable": false,
       "icon": "build/icon.ico",
-      "artifactName": "TechPack-Studio-Setup-${version}-${arch}.${ext}"
+      "artifactName": "TechPack-Studio-Setup-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "output/windows-converter/LibreOffice",
+          "to": "converter/LibreOffice"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -89,7 +95,7 @@
         "en_US"
       ],
       "language": "2052",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": true
     }
   }
 }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import JSZip from "jszip";
-import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer, type Element } from "@xmldom/xmldom";
 import {
   emptyTechPack,
   RISK_OPINION,
@@ -17,7 +17,7 @@ const parse = (text: string) =>
   new DOMParser().parseFromString(text, "application/xml");
 const stringify = (doc: ReturnType<typeof parse>) =>
   new XMLSerializer().serializeToString(doc);
-const nodes = (doc: ReturnType<typeof parse>, name: string) =>
+const nodes = (doc: ReturnType<typeof parse> | Element, name: string) =>
   Array.from(doc.getElementsByTagNameNS("*", name));
 const col = (index: number): string =>
   index > 26
@@ -424,7 +424,7 @@ test("consumption production quantity never uses material usage or sample quanti
   assert.match(content.get("E6")!, /藏青色/);
 });
 
-test("blank footer labels fill adjacent values and old external links never survive", async () => {
+test("blank footer labels fill adjacent values while original formulas and mail are retained", async () => {
   const zip = await fixture([
     ["耗料单", "用料申请"],
     ["样衣面料留卡(2.0版)", "夹克留卡"],
@@ -485,7 +485,7 @@ test("blank footer labels fill adjacent values and old external links never surv
   );
   assert.ok(footer);
   assert.equal(consumption.get(`B${position(footer[0]).row}`), "NEW PERSON");
-  assert.equal(consumption.get("N2"), "待确认");
+  assert.equal(consumption.get("N2"), "");
   const swatches = await values(saved, "xl/worksheets/sheet11.xml");
   assert.equal(swatches.get("B3"), "待确认");
   for (const file of ["sheet10.xml", "sheet11.xml"]) {
@@ -493,7 +493,7 @@ test("blank footer labels fill adjacent values and old external links never surv
       await saved.file(`xl/worksheets/${file}`)!.async("string"),
     );
     assert.ok(
-      nodes(doc, "f").every((f) => !/\[\d+\]/.test(f.textContent || "")),
+      nodes(doc, "f").some((f) => f.textContent === "[10]OldCover!D37"),
     );
   }
   assert.deepEqual(
@@ -507,6 +507,89 @@ test("blank footer labels fill adjacent values and old external links never surv
     ).some((f) => f.textContent === "[10]OldCover!D37"),
   );
   assert.ok(
-    output.warnings.some((w) => w.includes("N2") && w.includes("外部")),
+    !output.warnings.some((w) => w.includes("N2") && w.includes("外部")),
+  );
+});
+
+test("new material rows copy shared formulas with relative references and shift local links only", async () => {
+  const zip = await fixture([
+    ["面辅料配色表", "配色资料"],
+    ["客人意见或邮件", "业务备忘"],
+  ]);
+  const ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+  const source = parse(
+    await zip.file("xl/worksheets/sheet6.xml")!.async("string"),
+  );
+  const phantom = source.createElementNS(ns, "mergeCell");
+  phantom.setAttribute("ref", "V50:AB50");
+  nodes(source, "mergeCells")[0].appendChild(phantom);
+  for (const row of [6, 7, 8]) {
+    const cell = nodes(source, "c").find(
+      (c) => c.getAttribute("r") === `E${row}`,
+    )!;
+    while (cell.firstChild) cell.removeChild(cell.firstChild);
+    cell.removeAttribute("t");
+    const formula = source.createElementNS(ns, "f");
+    formula.setAttribute("t", "shared");
+    formula.setAttribute("si", "23");
+    if (row === 6) {
+      formula.setAttribute("ref", "E6:E8");
+      formula.appendChild(source.createTextNode('LEN(C6)+$M$1+N("C6")'));
+    }
+    cell.appendChild(formula);
+  }
+  zip.file("xl/worksheets/sheet6.xml", stringify(source));
+  const other = parse(
+    await zip.file("xl/worksheets/sheet9.xml")!.async("string"),
+  );
+  const row = nodes(other, "row")[0];
+  for (const [address, text] of [
+    ["N1", "'配色资料'!C9"],
+    ["O1", "'[10]配色资料'!C9"],
+  ]) {
+    const cell = other.createElementNS(ns, "c");
+    cell.setAttribute("r", address);
+    const formula = other.createElementNS(ns, "f");
+    formula.appendChild(other.createTextNode(text));
+    cell.appendChild(formula);
+    row.appendChild(cell);
+  }
+  zip.file("xl/worksheets/sheet9.xml", stringify(other));
+  const output = await generateTemplateWorkbook(
+    await zip.generateAsync({ type: "nodebuffer" }),
+    data(),
+  );
+  const saved = await JSZip.loadAsync(output.buffer);
+  assert.match(
+    output.sheets[0].area,
+    /:H\d+$/,
+    "far-away blank merges must not add blank print pages",
+  );
+  const result = parse(
+    await saved.file("xl/worksheets/sheet6.xml")!.async("string"),
+  );
+  for (let row = 6; row <= 11; row++) {
+    const cell = nodes(result, "c").find(
+      (c) => c.getAttribute("r") === `E${row}`,
+    )!;
+    assert.equal(nodes(cell, "f")[0].textContent, `LEN(C${row})+$M$1+N("C6")`);
+    assert.equal(nodes(cell, "f")[0].hasAttribute("t"), false);
+  }
+  const linked = parse(
+    await saved.file("xl/worksheets/sheet9.xml")!.async("string"),
+  );
+  assert.equal(
+    nodes(
+      nodes(linked, "c").find((c) => c.getAttribute("r") === "N1")!,
+      "f",
+    )[0].textContent,
+    "'配色资料'!C12",
+  );
+  assert.equal(
+    nodes(
+      nodes(linked, "c").find((c) => c.getAttribute("r") === "O1")!,
+      "f",
+    )[0].textContent,
+    "'[10]配色资料'!C9",
   );
 });

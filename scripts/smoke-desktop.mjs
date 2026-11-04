@@ -11,6 +11,18 @@ const root = process.cwd(),
   output = path.join(root, "output/playwright");
 await fs.mkdir(output, { recursive: true });
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), "techpack-desktop-"));
+const install = await fs.mkdtemp(
+  path.join(os.tmpdir(), "techpack-desktop-install-"),
+);
+await fs.copyFile(
+  path.join(root, "package.json"),
+  path.join(install, "package.json"),
+);
+for (const name of ["out", "resources", "node_modules"])
+  await fs.symlink(path.join(root, name), path.join(install, name));
+const cacheRoot = await fs.mkdtemp(
+  path.join(os.tmpdir(), "techpack-custom-cache-"),
+);
 const example = JSON.parse(
   await fs.readFile(path.join(root, "resources/example.json"), "utf8"),
 );
@@ -54,7 +66,7 @@ let app, page;
 try {
   app = await _electron.launch({
     executablePath: electronPath,
-    args: [".", "--use-mock-keychain"],
+    args: [install, "--use-mock-keychain"],
     cwd: root,
     env,
   });
@@ -82,33 +94,13 @@ try {
   );
   await page.screenshot({ path: path.join(output, "01-import.png") });
 
-  const ruleList = page.getByRole("list", { name: "已保存的模板规则" });
-  const initialRules = await page.evaluate(() =>
-    window.techpack.settings().then((value) => value.templateRules),
+  assert.equal(
+    await page.getByRole("list", { name: "已保存的模板规则" }).count(),
+    0,
   );
-  assert.equal(await ruleList.locator("li").count(), 5);
-  await page.getByRole("button", { name: "新增模板规则", exact: true }).click();
-  await page.getByLabel("模板规则内容", { exact: true }).fill("测试新增规则");
-  await page.getByLabel("模板规则内容", { exact: true }).press("Enter");
-  await ruleList.getByText("测试新增规则", { exact: true }).waitFor();
-  await page.reload();
-  await ruleList.getByText("测试新增规则", { exact: true }).waitFor();
-  await ruleList.getByText("测试新增规则", { exact: true }).dblclick();
-  await page.getByLabel("模板规则内容", { exact: true }).fill("测试修改规则");
-  await page.getByLabel("模板规则内容", { exact: true }).press("Enter");
-  const editedRule = ruleList.getByText("测试修改规则", { exact: true });
-  await editedRule.waitFor();
-  await editedRule.click();
-  await editedRule.click({ button: "right" });
-  await page.getByRole("menu", { name: "模板规则操作" }).waitFor();
-  await page.screenshot({ path: path.join(output, "01-rules-menu.png") });
-  await page.getByRole("menuitem", { name: "删除", exact: true }).click();
-  await editedRule.waitFor({ state: "detached" });
-  assert.deepEqual(
-    await page.evaluate(() =>
-      window.techpack.settings().then((value) => value.templateRules),
-    ),
-    initialRules,
+  assert.equal(
+    await page.getByRole("button", { name: "新增模板规则" }).count(),
+    0,
   );
 
   const incompatiblePath = path.join(output, "reduced-template.xlsx");
@@ -174,6 +166,25 @@ try {
     .click();
   const settings = page.getByRole("dialog");
   assert.equal(await settings.getByLabel("推理强度").inputValue(), "xhigh");
+  assert.equal(
+    await settings.getByLabel("识别缓存目录").inputValue(),
+    path.join(install, "techpack-studio-cache"),
+  );
+  await app.evaluate(({ dialog }, directory) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [directory],
+    });
+  }, cacheRoot);
+  await settings.getByRole("button", { name: "更改位置", exact: true }).click();
+  await settings
+    .getByText("缓存位置已保存，立即生效。", { exact: true })
+    .waitFor();
+  assert.equal(
+    await settings.getByLabel("识别缓存目录").inputValue(),
+    path.join(cacheRoot, "techpack-studio-cache"),
+  );
+
   await settings
     .getByLabel("API 基础地址")
     .fill("http://techpack-proxy.invalid/v1");
@@ -314,8 +325,20 @@ try {
   await page
     .getByRole("heading", { name: "新制单已生成", exact: true })
     .waitFor({ timeout: 60000 });
-  assert.equal(await page.locator(".sheet-list > div").count(), 10);
+  assert.equal(await page.locator(".print-summary").count(), 0);
+  assert.equal(
+    await page.getByRole("heading", { name: "需要核对的项目" }).count(),
+    0,
+  );
   const customZip = await JSZip.loadAsync(await fs.readFile(customDestination));
+  assert.equal(
+    [
+      ...(await customZip.file("xl/workbook.xml").async("string")).matchAll(
+        /<sheet\b/g,
+      ),
+    ].length,
+    10,
+  );
   assert.doesNotMatch(
     await customZip.file("xl/workbook.xml").async("string"),
     /name="CAD"/,
@@ -343,6 +366,42 @@ try {
     .getByRole("heading", { name: "P4541 RANDY", exact: true })
     .waitFor();
   assert.equal(requests, 1, "reviewed example does not call a cloud model");
+  await page.getByRole("button", { name: "返回导入", exact: true }).click();
+  await page
+    .getByRole("button", { name: "模型与 API 设置", exact: false })
+    .click();
+  const customDirectory = path.join(cacheRoot, "techpack-studio-cache");
+  await fs.writeFile(path.join(customDirectory, "keep-me.json"), "unrelated");
+  await settings.getByRole("button", { name: "清除缓存", exact: true }).click();
+  await settings
+    .getByText("已清理 1 个缓存文件，下次识别会重新调用 AI。", { exact: true })
+    .waitFor();
+  assert.equal(
+    await fs.readFile(path.join(customDirectory, "keep-me.json"), "utf8"),
+    "unrelated",
+  );
+  await settings.getByRole("button", { name: "取消", exact: true }).click();
+  await page
+    .getByRole("button", { name: "识别并整理资料", exact: false })
+    .click();
+  await page
+    .getByRole("heading", { name: "P4541 RANDY", exact: true })
+    .waitFor();
+  assert.equal(
+    requests,
+    2,
+    "clearing cache causes the same PDF to call the model again",
+  );
+  await page
+    .getByRole("button", { name: "模型与 API 设置", exact: false })
+    .click();
+  await settings.getByRole("button", { name: "恢复默认", exact: true }).click();
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelector('[aria-label="识别缓存目录"]').value === expected,
+    path.join(install, "techpack-studio-cache"),
+  );
+  await settings.getByRole("button", { name: "取消", exact: true }).click();
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify(
@@ -372,4 +431,6 @@ try {
   if (app) await app.close();
   server.close();
   await fs.rm(profile, { recursive: true, force: true });
+  await fs.rm(install, { recursive: true, force: true });
+  await fs.rm(cacheRoot, { recursive: true, force: true });
 }

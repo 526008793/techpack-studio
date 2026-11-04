@@ -24,11 +24,7 @@ import {
   chineseLabel,
   CHINESE_TBC,
 } from "../shared/chinese-text";
-import {
-  annotationWarnings,
-  remainingConstruction,
-  unplacedAnnotationRows,
-} from "../shared/cad-annotations";
+import { annotationWarnings } from "../shared/cad-annotations";
 import {
   normalizeLabel,
   scalarField,
@@ -153,12 +149,29 @@ class Sheet {
     style?: number,
   ) {
     const cell = this.cell(address);
+    const originalStyle = this.style(address);
+    const formula = first(cell, "f");
+    // 保留模板的计算和跨表引用；新资料只更新缓存值，Excel 打开后重新计算。
+    // 旧款 DISPIMG 图片仍按既有流程替换为新 PDF 图片。
+    const preservedFormula =
+      formula &&
+      (formula.textContent?.trim() || formula.hasAttribute("t")) &&
+      !/DISPIMG/i.test(formula.textContent || "")
+        ? formula
+        : undefined;
     while (cell.firstChild) cell.removeChild(cell.firstChild);
     cell.removeAttribute("t");
-    if (style !== undefined) cell.setAttribute("s", String(style));
+    if (preservedFormula) cell.appendChild(preservedFormula);
+    if (style !== undefined)
+      cell.setAttribute(
+        "s",
+        String(this.book.preserveBorder(style, originalStyle)),
+      );
     if (value === null || value === undefined || value === "") return;
-    if (typeof value === "number") {
-      if (!Number.isFinite(value)) throw new Error("尺寸或数量必须是有效数字");
+    if (typeof value === "number" || preservedFormula) {
+      if (typeof value === "number" && !Number.isFinite(value))
+        throw new Error("尺寸或数量必须是有效数字");
+      if (typeof value === "string") cell.setAttribute("t", "str");
       const v = node(this.doc, "v");
       v.appendChild(this.doc.createTextNode(String(value)));
       cell.appendChild(v);
@@ -174,7 +187,16 @@ class Sheet {
     }
   }
   style(address: string): number {
-    return Number(this.cell(address).getAttribute("s") || 0);
+    const cell = this.cell(address);
+    if (cell.hasAttribute("s")) return Number(cell.getAttribute("s"));
+    const { row, col } = splitAddress(address);
+    const rowStyle = this.row(row).getAttribute("s");
+    const column = elements(this.doc, "col").find(
+      (c) =>
+        Number(c.getAttribute("min")) <= col &&
+        Number(c.getAttribute("max")) >= col,
+    );
+    return Number(rowStyle || column?.getAttribute("style") || 0);
   }
   height(row: number, height: number) {
     const r = this.row(row);
@@ -727,8 +749,12 @@ class Sheet {
       row: cell.row,
       col: cell.endCol,
     }));
-    for (const merge of elements(this.doc, "mergeCell"))
-      addresses.push(areaCoords(merge.getAttribute("ref")!).end);
+    const contentWidth = Math.max(1, ...addresses.map((c) => c.col));
+    for (const merge of elements(this.doc, "mergeCell")) {
+      const area = areaCoords(merge.getAttribute("ref")!);
+      // XLS 还可能带有 IV 等远端空白合并；保留它们的格式，但不把它们算入页面。
+      if (area.start.col <= contentWidth) addresses.push(area.end);
+    }
     return {
       row: Math.max(
         1,
@@ -742,7 +768,31 @@ class Sheet {
   }
   async insertRows(at: number, count: number, source: number) {
     if (count <= 0) return;
-    const pattern = this.row(source).cloneNode(true) as Element;
+    // 共享公式先展开为逐格公式，避免插行后共享范围与复制行互相覆盖。
+    const shared = new Map<string, { address: string; formula: string }>();
+    for (const cell of elements(this.doc, "c")) {
+      const f = first(cell, "f");
+      if (f?.getAttribute("t") === "shared" && f.textContent?.trim())
+        shared.set(f.getAttribute("si")!, {
+          address: cell.getAttribute("r")!,
+          formula: f.textContent,
+        });
+    }
+    for (const cell of elements(this.doc, "c")) {
+      const f = first(cell, "f");
+      if (f?.getAttribute("t") !== "shared") continue;
+      const master = shared.get(f.getAttribute("si")!);
+      if (!master) continue;
+      const from = splitAddress(master.address),
+        to = splitAddress(cell.getAttribute("r")!);
+      f.textContent = copyFormula(
+        master.formula,
+        to.row - from.row,
+        to.col - from.col,
+      );
+      for (const attribute of ["t", "si", "ref"]) f.removeAttribute(attribute);
+    }
+    const sourceRow = this.row(source);
     for (const row of children(this.data, "row").reverse()) {
       const index = Number(row.getAttribute("r"));
       if (index < at) continue;
@@ -760,6 +810,7 @@ class Sheet {
       "hyperlink",
       "conditionalFormatting",
       "dataValidation",
+      "f",
     ]) {
       for (const element of elements(this.doc, tag)) {
         for (const attribute of ["ref", "sqref"]) {
@@ -769,6 +820,26 @@ class Sheet {
         }
       }
     }
+    // 保留表内公式和其他工作表对新增行下方单元格的引用。
+    for (const sh of this.book.sheets) {
+      for (const f of elements(sh.doc, "f")) {
+        const value = f.textContent || "";
+        const updated = mapFormulaReferences(value, (prefix, range) => {
+          const owner = prefix
+            ? prefix.slice(0, -1).replace(/^'|'$/g, "").replaceAll("''", "'")
+            : sh.name;
+          return (
+            (prefix || "") +
+            (owner === this.name ? moveRows(range, at, count) : range)
+          );
+        });
+        if (updated !== value) {
+          f.textContent = updated;
+          this.book.formulaChangedSheets.add(sh.name);
+        }
+      }
+    }
+    const pattern = sourceRow.cloneNode(true) as Element;
     for (let index = at; index < at + count; index++) {
       const row = pattern.cloneNode(true) as Element;
       row.setAttribute("r", String(index));
@@ -777,43 +848,31 @@ class Sheet {
           "r",
           `${colName(splitAddress(cell.getAttribute("r")!).col)}${index}`,
         );
+        const formula = first(cell, "f");
         while (cell.firstChild) cell.removeChild(cell.firstChild);
+        if (formula) {
+          formula.textContent = copyFormula(
+            formula.textContent || "",
+            index - Number(pattern.getAttribute("r")),
+            0,
+          );
+          if (formula.hasAttribute("ref"))
+            formula.setAttribute(
+              "ref",
+              copyFormula(
+                formula.getAttribute("ref")!,
+                index - Number(pattern.getAttribute("r")),
+                0,
+              ),
+            );
+          cell.appendChild(formula);
+        }
         cell.removeAttribute("t");
       }
       const next = children(this.data, "row").find(
         (r) => Number(r.getAttribute("r")) > index,
       );
       this.data.insertBefore(row, next || null);
-    }
-    // 保留表内公式和其他工作表对新增行下方单元格的引用。
-    for (const sh of this.book.sheets) {
-      for (const f of elements(sh.doc, "f")) {
-        const value = f.textContent || "";
-        const updated = value
-          .split(/("(?:[^"]|"")*")/)
-          .map((part, i) => {
-            if (i % 2) return part;
-            return part.replace(
-              /(?<![\w!])((?:'(?:[^']|'')+'|[\p{L}\w.-]+)!)?(\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?)(?![\w(])/gu,
-              (match, prefix, range) => {
-                const owner = prefix
-                  ? prefix
-                      .slice(0, -1)
-                      .replace(/^'|'$/g, "")
-                      .replaceAll("''", "'")
-                  : sh.name;
-                return owner === this.name
-                  ? (prefix || "") + moveRows(range, at, count)
-                  : match;
-              },
-            );
-          })
-          .join("");
-        if (updated !== value) {
-          f.textContent = updated;
-          this.book.formulaChangedSheets.add(sh.name);
-        }
-      }
     }
     const ref = elements(this.doc, "drawing")[0];
     if (ref) {
@@ -869,6 +928,21 @@ class Sheet {
     column.setAttribute("max", String(index));
     column.removeAttribute("hidden");
   }
+  clearCadBorders(area: string) {
+    const { start, end } = areaCoords(area);
+    const styles = new Map<number, number>();
+    // 旧图下的模板框线会在换图后露出；只清图片区，保留页头框线。
+    for (let row = start.row; row <= end.row; row++)
+      for (let col = start.col; col <= end.col; col++) {
+        const address = `${colName(col)}${row}`;
+        const original = this.style(address);
+        if (!styles.has(original))
+          styles.set(original, this.book.borderlessStyle(original));
+        this.cell(address).setAttribute("s", String(styles.get(original)!));
+      }
+    for (const view of elements(this.doc, "sheetView"))
+      view.setAttribute("showGridLines", "0");
+  }
 }
 
 function moveRows(value: string, at: number, count: number) {
@@ -880,6 +954,42 @@ function moveRows(value: string, at: number, count: number) {
       const lastRow = Number(end) >= at - 1 ? Number(end) + count : Number(end);
       return `${a}${firstRow}:${b}${lastRow}`;
     },
+  );
+}
+
+function mapFormulaReferences(
+  value: string,
+  map: (prefix: string, range: string) => string,
+) {
+  return value
+    .split(/("(?:[^"]|"")*")/)
+    .map((part, index) =>
+      index % 2
+        ? part
+        : part.replace(
+            /(?<![\w!])((?:'(?:[^']|'')+'|(?:\[\d+\])?[\p{L}\w.-]+)!)?(\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?)(?![\w(])/gu,
+            (_match, prefix, range) => map(prefix || "", range),
+          ),
+    )
+    .join("");
+}
+
+function copyFormula(value: string, rows: number, columns: number) {
+  // 复制公式只移动相对引用；字符串中的 A1、绝对行列和外部工作簿名保留。
+  return mapFormulaReferences(
+    value,
+    (prefix, range) =>
+      prefix +
+      range.replace(
+        /(\$?)([A-Z]+)(\$?)(\d+)/g,
+        (_match, fixedCol, col, fixedRow, row) => {
+          const nextCol = colIndex(col) + (fixedCol ? 0 : columns);
+          const nextRow = Number(row) + (fixedRow ? 0 : rows);
+          return nextCol < 1 || nextRow < 1
+            ? "#REF!"
+            : `${fixedCol}${colName(nextCol)}${fixedRow}${nextRow}`;
+        },
+      ),
   );
 }
 
@@ -895,6 +1005,7 @@ class TemplateBook {
   printAreas = new Map<string, string>();
   styles!: Document;
   formulaChangedSheets = new Set<string>();
+  private borderStyles = new Map<string, number>();
   constructor(public zip: JSZip) {}
   async xml(file: string) {
     const cached = this.docs.get(file);
@@ -1104,7 +1215,7 @@ class TemplateBook {
     // Empty f nodes from converted .xls files must not hide overwritten literal values.
     for (const sh of this.sheets.filter((s) => this.printAreas.has(s.name)))
       for (const formula of elements(sh.doc, "f"))
-        if (!formula.textContent?.trim())
+        if (!formula.textContent?.trim() && !formula.hasAttribute("t"))
           formula.parentNode!.removeChild(formula);
     const preservedFiles = new Set(
       this.sheets
@@ -1222,6 +1333,45 @@ class TemplateBook {
     xfs.appendChild(xf);
     xfs.setAttribute("count", String(children(xfs, "xf").length));
     return children(xfs, "xf").length - 1;
+  }
+  preserveBorder(base: number, original: number) {
+    const xfs = elements(this.styles, "cellXfs")[0];
+    const source = children(xfs, "xf")[base];
+    const target = children(xfs, "xf")[original];
+    const border = target.getAttribute("borderId") || "0";
+    const apply = target.getAttribute("applyBorder");
+    if (
+      (source.getAttribute("borderId") || "0") === border &&
+      source.getAttribute("applyBorder") === apply
+    )
+      return base;
+    const key = `${base}:${border}:${apply}`;
+    const cached = this.borderStyles.get(key);
+    if (cached !== undefined) return cached;
+    // 字体、换行等可随内容适配；框线始终来自目标格，不能从别的表复制。
+    const xf = source.cloneNode(true) as Element;
+    xf.setAttribute("borderId", border);
+    if (apply !== null) xf.setAttribute("applyBorder", apply);
+    else xf.removeAttribute("applyBorder");
+    const index = children(xfs, "xf").length;
+    xfs.appendChild(xf);
+    xfs.setAttribute("count", String(index + 1));
+    this.borderStyles.set(key, index);
+    return index;
+  }
+  borderlessStyle(base: number) {
+    const xfs = elements(this.styles, "cellXfs")[0];
+    const xf = children(xfs, "xf")[base].cloneNode(true) as Element;
+    xf.setAttribute("borderId", "0");
+    xf.setAttribute("applyBorder", "1");
+    const existing = children(xfs, "xf").findIndex(
+      (item) => serializeElement(item) === serializeElement(xf),
+    );
+    if (existing >= 0) return existing;
+    const index = children(xfs, "xf").length;
+    xfs.appendChild(xf);
+    xfs.setAttribute("count", String(index + 1));
+    return index;
   }
 }
 
@@ -1441,6 +1591,7 @@ export async function generateWorkbook(
     await sh.drawing();
     sh.unmerge("A3:H150");
     sh.clear("A3:H150");
+    sh.clearCadBorders(`A4:H${Math.max(150, sh.bounds().row)}`);
     sh.set("A2", title);
     sh.merged(
       "A3:H3",
@@ -1468,81 +1619,9 @@ export async function generateWorkbook(
     }
     if (!selected.length)
       sh.set("A4", "未提供对应图片 / SOURCE IMAGE NOT PROVIDED", regular);
-    let row = 15;
-    if (name === "CAD") {
-      for (const item of remainingConstruction(data, selected)) {
-        sh.merged(
-          `A${row}:B${row}`,
-          bilingual(item.titleZh, item.titleEn),
-          48,
-          label,
-        );
-        const text = bilingual(item.detailZh, item.detailEn);
-        const height = fittedHeight(
-          [text],
-          [
-            Array.from({ length: 6 }, (_, i) => sh.width(i + 3)).reduce(
-              (a, b) => a + b,
-              0,
-            ),
-          ],
-          12,
-          50,
-        );
-        sh.merged(`C${row}:H${row}`, text, height, regular);
-        row++;
-      }
-    } else if (name === "CAD-1 (2)") {
-      for (const m of materials.filter((m) => m.kind === "label")) {
-        const text = [
-          bilingual(m.nameZh, m.nameEn),
-          bilingual(m.specZh, m.specEn),
-          bilingual(m.placementZh, m.placementEn),
-          m.notesZh,
-          m.notesEn,
-        ]
-          .filter(Boolean)
-          .join("; ");
-        sh.merged(
-          `A${row}:H${row}`,
-          text,
-          fittedHeight([text], [860], 12, 48),
-          regular,
-        );
-        row++;
-      }
-    } else {
-      for (const image of selected) {
-        sh.merged(
-          `A${row}:H${row}`,
-          image.caption || "参考图片 / REFERENCE IMAGE",
-          40,
-          regular,
-        );
-        row++;
-      }
-      sh.merged(
-        `A${row}:H${row}`,
-        "颜色及规格以面辅料表为准。 / COLORS & SPECS PER MATERIALS TABLE.",
-        40,
-        regular,
-      );
-      row++;
-    }
-    for (const annotation of unplacedAnnotationRows(
-      selected,
-      name === "CAD" ? remainingConstruction(data, selected) : [],
-    )) {
-      const text = bilingual(annotation.textZh, annotation.textEn);
-      sh.merged(
-        `A${row}:H${row}`,
-        text,
-        fittedHeight([text], [860], 12, 48),
-        regular,
-      );
-      row++;
-    }
-    sheets.push(sh.print(`A1:H${Math.max(row - 1, 15)}`));
+    // CAD 译文只使用图上的可编辑标注，不再补写图下说明。
+    const lastRow = selected.length > 2 ? 14 + (selected.length - 1) * 5 : 15;
+    sheets.push(sh.print(`A1:H${lastRow}`));
   }
 
   await bom.drawing();
@@ -1840,8 +1919,7 @@ export async function generateWorkbook(
   sheets.push(cons.print(`A1:L${consLast + 1}`));
 
   await card.drawing();
-  card.unmerge("A5:J250");
-  card.clear("A5:J250");
+  clearSwatchBody(card);
   card.set("A2", "样衣面料留底卡");
   for (const [cell, value] of Object.entries({
     A3: "客户",
@@ -1857,33 +1935,20 @@ export async function generateWorkbook(
     F3: description,
     H3: meta.merchandiser || TBC,
     J3: meta.issueDate || TBC,
-    L1: meta.brand || TBC,
+    L1: [meta.brand, meta.customer].filter(Boolean).join(" / ") || TBC,
     L12: style,
     L40: meta.descriptionZh || TBC,
     L55: meta.merchandiser || TBC,
   }))
-    card.set(cell, value, cell.startsWith("L") ? undefined : label);
+    writeTemplateCell(
+      book,
+      card,
+      cell,
+      value,
+      cell.startsWith("L") ? undefined : label,
+    );
   card.height(3, fittedHeight([description], [card.width(6)], 11, 54));
-  const block = 16,
-    cardEnd = Math.max(69, fabrics.length * block + 5);
-  for (let r = 5; r <= cardEnd; r++) card.height(r, 11);
-  for (const [i, m] of fabrics.entries()) {
-    const start = 6 + i * block;
-    const texts = [
-      chinese(m.nameZh) + "：" + chinese(m.specZh),
-      `颜色：${m.colors[0] ? chineseColor(m.colors[0]) : TBC}；部位：${chinese(m.placementZh)}`,
-      "供应商、幅宽、价格、收布日期/米数：待确认",
-      "实样粘贴区",
-    ];
-    for (const [j, offset] of [0, 1, 2, 4].entries())
-      card.merged(
-        `A${start + offset}:J${start + offset}`,
-        texts[j],
-        [48, 34, 30, 26][j],
-        regular,
-      );
-  }
-  sheets.push(card.print(`A1:M${cardEnd}`));
+  sheets.push(card.print(`A1:M${card.bounds().row}`));
   // Clear previous style identifiers only in editable metadata; original mail stays untouched.
   const warnings = [
     ...missingSummary(data),
@@ -2279,46 +2344,17 @@ async function fillSampleGrid(book: TemplateBook, sh: Sheet, data: TechPack) {
   // 总计下方的说明随新增配色整行下移，不重写客户条款。
 }
 
-async function fillSwatches(book: TemplateBook, sh: Sheet, data: TechPack) {
-  const snapshot = sh.snapshot();
-  const instruction = snapshot.cells.find((c) =>
-    /所需信息|SWATCHINFORMATION/.test(normalizeLabel(c.value)),
-  );
-  if (!instruction) return false;
-  const start = instruction.row + 1;
-  const firstCol = instruction.col;
-  const endCol = instruction.endCol;
-  const fabrics = normalizedMaterials(data).filter(
-    (m) => m.kind === "fabric" || m.kind === "interlining",
-  );
-  const bounds = sh.bounds();
-  const block = Math.max(
-    6,
-    Math.floor((bounds.row - start + 1) / Math.max(1, fabrics.length)),
-  );
-  const last = Math.max(bounds.row, start + block * fabrics.length - 1);
-  await sh.insertRows(bounds.row + 1, last - bounds.row, start);
-  sh.unmerge(`${colName(firstCol)}${start}:${colName(endCol)}${last}`);
-  sh.clear(`${colName(firstCol)}${start}:${colName(endCol)}${last}`);
-  for (let row = start; row <= last; row++) sh.height(row, 12);
-  fabrics.forEach((material, index) => {
-    const row = start + block * index;
-    const text = chinese(material.nameZh) + "\n" + chinese(material.specZh);
-    sh.merge(`${colName(firstCol)}${row}:${colName(endCol)}${row}`);
-    writeTemplateCell(book, sh, `${colName(firstCol)}${row}`, text);
-    sh.merge(`${colName(firstCol)}${row + 1}:${colName(endCol)}${row + 1}`);
-    writeTemplateCell(
-      book,
-      sh,
-      `${colName(firstCol)}${row + 1}`,
-      `颜色：${material.colors.map(chineseColor).join(" / ") || TBC}；部位：${chinese(material.placementZh)}`,
+function clearSwatchBody(sh: Sheet) {
+  const instruction = sh
+    .snapshot()
+    .cells.find((c) =>
+      /所需信息|SWATCHINFORMATION/.test(normalizeLabel(c.value)),
     );
-    sh.merge(
-      `${colName(firstCol)}${row + 3}:${colName(endCol)}${row + block - 1}`,
-    );
-    writeTemplateCell(book, sh, `${colName(firstCol)}${row + 3}`, "实样粘贴区");
-  });
-  return true;
+  if (!instruction) return;
+  // 留底卡正文留给实际贴样与手工填写，不重建面料说明、合并区域或框线。
+  sh.clear(
+    `${colName(instruction.col)}${instruction.row + 1}:${colName(instruction.endCol)}${sh.bounds().row}`,
+  );
 }
 
 export async function generateTemplateWorkbook(
@@ -2538,8 +2574,7 @@ export async function generateTemplateWorkbook(
       await fillSampleGrid(book, sh, data);
       protectedAfter = sampleTotalRow(sh.snapshot());
     } else if (role === "swatches") {
-      if (!(await fillSwatches(book, sh, data)))
-        warnings.push(`「${sh.name}」未找到留卡信息区域，请核对填写结果。`);
+      clearSwatchBody(sh);
     } else if (role === "cad") {
       const title = snapshot.cells.find((c) =>
         /款式工艺图|CONSTRUCTION|REFERENCES|参考/.test(normalizeLabel(c.value)),
@@ -2588,38 +2623,9 @@ export async function generateTemplateWorkbook(
           row++;
         }
       }
-      const textPages = generalCad;
-      const textPage = textPages.indexOf(sh);
-      const pending = remainingConstruction(
-        data,
-        [...cadImages.values()].flat(),
+      sh.clearCadBorders(
+        `${colName(firstCol)}${firstRow}:${colName(lastCol)}${Math.max(bounds.row, row)}`,
       );
-      const textCount = Math.ceil(
-        pending.length / Math.max(1, textPages.length),
-      );
-      if (textPage >= 0)
-        for (const item of pending.slice(
-          textPage * textCount,
-          (textPage + 1) * textCount,
-        )) {
-          const text =
-            bilingual(item.titleZh, item.titleEn) +
-            "\n" +
-            bilingual(item.detailZh, item.detailEn);
-          sh.merge(`${colName(firstCol)}${row}:${colName(lastCol)}${row}`);
-          writeTemplateCell(book, sh, `${colName(firstCol)}${row}`, text);
-          row++;
-        }
-      for (const annotation of unplacedAnnotationRows(selected, pending)) {
-        sh.merge(`${colName(firstCol)}${row}:${colName(lastCol)}${row}`);
-        writeTemplateCell(
-          book,
-          sh,
-          `${colName(firstCol)}${row}`,
-          bilingual(annotation.textZh, annotation.textEn),
-        );
-        row++;
-      }
     }
     if (role === "risk") {
       for (const cell of sh
@@ -2714,14 +2720,6 @@ export async function generateTemplateWorkbook(
           Math.max(20, originalSlot?.height || availableHeight),
         );
       }
-    }
-    // 旧模板的外部工作簿链接不能继续带入新款，未被字段映射替换的引用需人工确认。
-    for (const formula of elements(sh.doc, "f")) {
-      if (!/\[\d+\]/.test(formula.textContent || "")) continue;
-      const address = (formula.parentNode as Element).getAttribute("r")!;
-      if (protectedRow(splitAddress(address).row)) continue;
-      writeTemplateCell(book, sh, address, TBC);
-      warnings.push(`「${sh.name}」${address} 的旧外部文件引用已置为待确认。`);
     }
     for (const cell of sh.snapshot().cells) {
       if (protectedRow(cell.row)) continue;

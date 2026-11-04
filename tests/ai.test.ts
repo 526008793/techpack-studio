@@ -127,6 +127,40 @@ test("API errors never expose the configured API key", async () => {
       error.message.includes("401"),
   );
 });
+
+test("service timeouts preserve request IDs, hide keys and do not silently retry or change reasoning effort", async () => {
+  for (const status of [408, 504]) {
+    let calls = 0;
+    await assert.rejects(
+      extractTechPack(
+        config,
+        pages,
+        new AbortController().signal,
+        async (_url, options) => {
+          calls++;
+          assert.deepEqual(JSON.parse(String(options.body)).reasoning, {
+            effort: "xhigh",
+          });
+          return Response.json(
+            {
+              error: {
+                message:
+                  "请求超时 request_id: req_test_timeout test-only-secret",
+              },
+            },
+            { status },
+          );
+        },
+      ),
+      (error) =>
+        error instanceof Error &&
+        error.message.includes("模型服务或中转接口请求超时") &&
+        error.message.includes("req_test_timeout") &&
+        !error.message.includes(config.apiKey!),
+    );
+    assert.equal(calls, 1);
+  }
+});
 test("connection errors explain DNS, proxy, refused, timeout and certificate failures without exposing keys", async () => {
   const failures: [Error, RegExp][] = [
     [

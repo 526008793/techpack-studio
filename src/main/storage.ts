@@ -5,7 +5,6 @@ import {
   type ApiSettings,
   techPackSchema,
   type TechPack,
-  DEFAULT_TEMPLATE_RULES,
 } from "../shared/model";
 
 export interface Cipher {
@@ -19,7 +18,6 @@ const defaults: ApiSettings = {
   model: "gpt-6.1-sol",
   reasoningEffort: "xhigh",
   rememberKey: true,
-  templateRules: [...DEFAULT_TEMPLATE_RULES],
 };
 export class SettingsStore {
   private memoryKey = "";
@@ -40,7 +38,6 @@ export class SettingsStore {
         // 旧版设置没有推理强度字段，升级后使用 xhigh。
         reasoningEffort: raw.reasoningEffort || defaults.reasoningEffort,
         rememberKey: raw.rememberKey !== false,
-        templateRules: raw.templateRules ?? [...DEFAULT_TEMPLATE_RULES],
       };
       if (raw.encryptedKey && this.cipher.isEncryptionAvailable())
         this.memoryKey = this.cipher.decryptString(
@@ -70,7 +67,6 @@ export class SettingsStore {
       model: next.model.trim(),
       reasoningEffort: next.reasoningEffort,
       rememberKey: next.rememberKey,
-      templateRules: next.templateRules ?? [...DEFAULT_TEMPLATE_RULES],
     };
     const encryptedKey =
       this.memoryKey && next.rememberKey ? this.encrypt(this.memoryKey) : null;
@@ -114,7 +110,7 @@ export async function readCache(
   try {
     return techPackSchema.parse(
       JSON.parse(
-        await fs.readFile(path.join(directory, "cache", key + ".json"), "utf8"),
+        await fs.readFile(path.join(directory, key + ".json"), "utf8"),
       ),
     );
   } catch {
@@ -126,5 +122,5 @@ export async function writeCache(
   key: string,
   data: TechPack,
 ) {
-  await atomicJson(path.join(directory, "cache", key + ".json"), data);
+  await atomicJson(path.join(directory, key + ".json"), data);
 }

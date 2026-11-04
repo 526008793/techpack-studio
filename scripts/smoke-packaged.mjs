@@ -49,7 +49,11 @@ try {
     await zip.file("xl/worksheets/sheet7.xml").async("string"),
     /<v>16<\/v>/,
   );
-  assert.equal(await page.locator(".sheet-list > div").count(), 11);
+  assert.equal(await page.locator(".print-summary").count(), 0);
+  assert.equal(
+    await page.getByRole("heading", { name: "需要核对的项目" }).count(),
+    0,
+  );
   await page.screenshot({
     path: path.join(root, "output/playwright/08-packaged.png"),
   });

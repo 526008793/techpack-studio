@@ -163,9 +163,22 @@ export async function extractTechPack(
   if (!response.ok) {
     const upstream =
       result?.error?.message || result?.message || `HTTP ${response.status}`;
-    throw new Error(
-      `识别失败（${response.status}）：${String(upstream).replaceAll(settings.apiKey || "__NO_KEY__", "[已隐藏]")}`,
+    const message = String(upstream).replaceAll(
+      settings.apiKey || "__NO_KEY__",
+      "[已隐藏]",
     );
+    if (response.status === 408 || response.status === 504) {
+      console.error("[model:service-timeout]", {
+        host: new URL(url).host,
+        status: response.status,
+        pages: pages.length,
+        effort: settings.reasoningEffort,
+      });
+      throw new Error(
+        `识别失败（${response.status}）：模型服务或中转接口请求超时，本次失败未保存识别缓存。可以重新识别；若反复出现，可调整推理强度或联系服务商检查超时限制。服务返回：${message}`,
+      );
+    }
+    throw new Error(`识别失败（${response.status}）：${message}`);
   }
   if (result?.status === "incomplete")
     throw new Error("模型未返回完整资料，请调整模型的输出额度后重新识别。");

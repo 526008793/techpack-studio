@@ -124,7 +124,10 @@ export type ApiSettings = {
   apiKey?: string;
   hasApiKey?: boolean;
   rememberKey: boolean;
-  templateRules?: string[];
+};
+export type CacheSettings = {
+  directory: string;
+  defaultDirectory: string;
 };
 export type PdfPage = {
   number: number;
@@ -152,24 +155,10 @@ export type SelectedFile = {
 export type ExportSummary = {
   path: string;
   name: string;
-  sheets: {
-    name: string;
-    area: string;
-    orientation: string;
-    matched?: boolean;
-  }[];
-  warnings: string[];
 };
 export const TBC = "待确认 / TBC";
 export const RISK_OPINION =
   "风险评估会意见：【版师在制版前找业务要客户原始资料或样衣照片，参考清晰图片做样】";
-export const DEFAULT_TEMPLATE_RULES = [
-  "面料逐项分行，末尾补“衬”",
-  "绣章不标黄",
-  "客人意见页保留模板内容",
-  "风险评估会意见保留原文",
-  "每个工作表打印一张 A4",
-];
 export function bilingual(
   zh: string | null | undefined,
   en: string | null | undefined,
@@ -248,6 +237,7 @@ export function missingSummary(data: TechPack): string[] {
   return [...new Set(missing)];
 }
 export type DesktopApi = {
+  platform: string;
   choosePdf(): Promise<SelectedFile | null>;
   chooseTemplate(): Promise<{
     id: string;
@@ -256,6 +246,11 @@ export type DesktopApi = {
   } | null>;
   settings(): Promise<ApiSettings>;
   saveSettings(settings: ApiSettings): Promise<ApiSettings>;
+  cacheSettings(): Promise<CacheSettings>;
+  chooseCacheDirectory(): Promise<CacheSettings | null>;
+  resetCacheDirectory(): Promise<CacheSettings>;
+  clearCache(): Promise<number>;
+  uninstallApp(): Promise<void>;
   analyze(request: {
     fileId: string;
     pages: PdfPage[];

@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SettingsStore, cacheKey } from "../src/main/storage";
-import { DEFAULT_TEMPLATE_RULES } from "../src/shared/model";
 test("remembered keys are encrypted; key is never returned to renderer or stored in plaintext", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "techpack-settings-"));
   const cipher = {
@@ -53,6 +52,7 @@ test("new and legacy settings default to xhigh and preserve the selected effort 
         baseUrl: "https://example.invalid/v1",
         model: "existing-model",
         rememberKey: false,
+        templateRules: ["旧版清单"],
       }),
     );
     const upgraded = new SettingsStore(dir, cipher);
@@ -60,16 +60,15 @@ test("new and legacy settings default to xhigh and preserve the selected effort 
     assert.equal(settings.reasoningEffort, "xhigh");
     assert.equal(settings.model, "existing-model");
     assert.equal(settings.protocol, "chat");
-    assert.deepEqual(settings.templateRules, DEFAULT_TEMPLATE_RULES);
+    assert.equal("templateRules" in settings, false);
     for (const reasoningEffort of ["high", "default", "xhigh"] as const) {
       await upgraded.save({ ...settings, reasoningEffort });
       const restarted = new SettingsStore(dir, cipher);
       assert.equal((await restarted.load()).reasoningEffort, reasoningEffort);
-    }
-    for (const templateRules of [["第一条自定义规则", "另一条规则"], []]) {
-      await upgraded.save({ ...settings, templateRules });
-      const restarted = new SettingsStore(dir, cipher);
-      assert.deepEqual((await restarted.load()).templateRules, templateRules);
+      const stored = JSON.parse(
+        await fs.readFile(path.join(dir, "settings.json"), "utf8"),
+      );
+      assert.equal("templateRules" in stored, false);
     }
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
