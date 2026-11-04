@@ -1,10 +1,17 @@
 import { getDocument, GlobalWorkerOptions, Util } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { PdfPage, Figure, FigureImage } from "../../shared/model";
+import type {
+  PdfPage,
+  Figure,
+  FigureImage,
+  PlacedAnnotation,
+} from "../../shared/model";
 import {
   CAD_COLOR,
   CAD_FONT,
   placeAnnotations,
+  validBox,
+  wrapAnnotation,
 } from "../../shared/cad-annotations";
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -190,27 +197,164 @@ export async function prepareFigure(
       return ink > Math.max(1, (x2 - x1) * (y2 - y1) * 0.0005);
     },
   );
+  let imageData = data;
+  let annotations = placed.annotations;
+  const pending = f.annotations
+    .map((annotation, index) => ({ ...annotation, index }))
+    .filter(
+      (annotation) =>
+        annotation.textZh.trim() &&
+        annotation.textEn.trim() &&
+        !annotations.some((item) => item.sourceIndex === annotation.index) &&
+        validBox({
+          x: (annotation.sourceBox.x - f.box.x) / f.box.width,
+          y: (annotation.sourceBox.y - f.box.y) / f.box.height,
+          width: annotation.sourceBox.width / f.box.width,
+          height: annotation.sourceBox.height / f.box.height,
+        }),
+    );
+  if (pending.length) {
+    // 密集图在右侧扩白，保留对应英文；不把未放下的译文丢到单元格正文或静默省略。
+    const padding = 18,
+      fontSize = Math.max(18, canvas.width / 65);
+    const englishSize = Math.max(14, fontSize * 0.7);
+    const columnWidth = Math.max(320, canvas.width * 0.45);
+    const textWidth = columnWidth - padding * 2;
+    const rows = pending.map((annotation) => {
+      context.font = `${englishSize}px ${CAD_FONT}`;
+      const english = wrapAnnotation(
+        `${annotation.index + 1}. ${annotation.textEn.replace(/\s+/g, " ")}`,
+        textWidth,
+        (text) => context.measureText(text).width,
+      );
+      context.font = `${fontSize}px ${CAD_FONT}`;
+      const chinese = wrapAnnotation(
+        annotation.textZh,
+        textWidth - 4,
+        (text) => context.measureText(text).width,
+      );
+      const chineseHeight = chinese.length * fontSize * 1.25 + 4;
+      return {
+        annotation,
+        english,
+        chinese,
+        chineseHeight,
+        height:
+          english.length * englishSize * 1.25 + 8 + chineseHeight + padding,
+      };
+    });
+    const top = padding + fontSize * 1.5;
+    const tallest = Math.max(...rows.map((row) => row.height));
+    const totalHeight = rows.reduce((total, row) => total + row.height, 0);
+    let panelHeight = Math.max(canvas.height, top + padding + totalHeight);
+    let bestScale = Infinity;
+    // 兼顾图片宽高，避免把密集译文排成过长的横条后被 Excel 过度缩小。
+    for (let columns = 1; columns <= rows.length; columns++) {
+      const candidateHeight = Math.max(
+        canvas.height,
+        top + padding + totalHeight / columns + tallest,
+      );
+      const scale = Math.max(
+        (canvas.width + columns * columnWidth) / canvas.width,
+        candidateHeight / canvas.height,
+      );
+      if (scale < bestScale) {
+        bestScale = scale;
+        panelHeight = candidateHeight;
+      }
+    }
+    let column = 0,
+      y = top;
+    const slots = rows.map((row) => {
+      if (y + row.height > panelHeight - padding) {
+        column++;
+        y = top;
+      }
+      const slot = {
+        ...row,
+        x: canvas.width + column * columnWidth + padding,
+        y,
+      };
+      y += row.height;
+      return slot;
+    });
+    const expanded = document.createElement("canvas");
+    expanded.width = Math.ceil(canvas.width + (column + 1) * columnWidth);
+    expanded.height = Math.ceil(panelHeight);
+    const expandedContext = expanded.getContext("2d")!;
+    expandedContext.fillStyle = "#FFFFFF";
+    expandedContext.fillRect(0, 0, expanded.width, expanded.height);
+    expandedContext.drawImage(canvas, 0, 0);
+    expandedContext.textBaseline = "top";
+    expandedContext.fillStyle = "#333333";
+    expandedContext.font = `${fontSize}px ${CAD_FONT}`;
+    for (let c = 0; c <= column; c++)
+      expandedContext.fillText(
+        "图中译文",
+        canvas.width + c * columnWidth + padding,
+        padding,
+      );
+    annotations = annotations.map((annotation) => ({
+      ...annotation,
+      box: {
+        x: (annotation.box.x * canvas.width) / expanded.width,
+        y: (annotation.box.y * canvas.height) / expanded.height,
+        width: (annotation.box.width * canvas.width) / expanded.width,
+        height: (annotation.box.height * canvas.height) / expanded.height,
+      },
+    }));
+    for (const slot of slots) {
+      expandedContext.font = `${englishSize}px ${CAD_FONT}`;
+      slot.english.forEach((line, index) =>
+        expandedContext.fillText(
+          line,
+          slot.x,
+          slot.y + index * englishSize * 1.25,
+        ),
+      );
+      const label: PlacedAnnotation = {
+        sourceIndex: slot.annotation.index,
+        placement: "side",
+        textEn: slot.annotation.textEn,
+        textZh: slot.chinese.join("\n"),
+        fontSize,
+        box: {
+          x: slot.x / expanded.width,
+          y:
+            (slot.y + slot.english.length * englishSize * 1.25 + 8) /
+            expanded.height,
+          width: textWidth / expanded.width,
+          height: slot.chineseHeight / expanded.height,
+        },
+      };
+      annotations.push(label);
+    }
+    imageData = expanded.toDataURL("image/png");
+  }
+  const unplaced = f.annotations.filter(
+    (annotation, index) =>
+      annotation.textZh.trim() &&
+      !annotations.some((item) => item.sourceIndex === index),
+  );
   return {
     role: f.role,
-    data,
+    data: imageData,
     caption: [f.captionZh, f.captionEn].filter(Boolean).join(" / "),
-    annotations: placed.annotations,
-    annotationWarnings: placed.warnings,
-    unplacedAnnotations: f.annotations
-      .filter(
-        (a) =>
-          a.textZh.trim() &&
-          !placed.annotations.some((p) => p.textEn === a.textEn),
-      )
-      .map(({ textEn, textZh }) => ({ textEn, textZh })),
+    annotations,
+    annotationWarnings: unplaced.length ? placed.warnings : [],
+    unplacedAnnotations: unplaced.map(({ textEn, textZh }) => ({
+      textEn,
+      textZh,
+    })),
+    thumbnailData: f.role === "appearance" ? styleThumbnail(canvas) : undefined,
   };
 }
 export async function previewFigure(
   f: Figure,
   pages: PdfPage[],
-): Promise<string> {
+): Promise<{ image: string; figure: FigureImage | null }> {
   const prepared = await prepareFigure(f, pages);
-  if (!prepared) return "";
+  if (!prepared) return { image: "", figure: null };
   const source = await image(prepared.data),
     canvas = document.createElement("canvas");
   canvas.width = source.naturalWidth;
@@ -229,7 +373,7 @@ export async function previewFigure(
       );
     });
   }
-  return canvas.toDataURL("image/png");
+  return { image: canvas.toDataURL("image/png"), figure: prepared };
 }
 export function parseDimension(text: string): number | null {
   const value = text.trim();
@@ -242,4 +386,101 @@ export function parseDimension(text: string): number | null {
     return whole < 0 ? whole - part : whole + part;
   }
   return null;
+}
+
+function styleThumbnail(source: HTMLCanvasElement): string {
+  const scan = document.createElement("canvas");
+  scan.width = Math.min(500, source.width);
+  scan.height = Math.max(
+    1,
+    Math.round((source.height * scan.width) / source.width),
+  );
+  const context = scan.getContext("2d", { willReadFrequently: true })!;
+  context.drawImage(source, 0, 0, scan.width, scan.height);
+  const pixels = context.getImageData(0, 0, scan.width, scan.height).data;
+  const mask = new Uint8Array(scan.width * scan.height);
+  for (let i = 0; i < mask.length; i++)
+    mask[i] =
+      pixels[i * 4 + 3] > 128 &&
+      Math.min(pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2]) < 235
+        ? 1
+        : 0;
+  const queue = new Int32Array(mask.length);
+  let best:
+    | {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+        count: number;
+      }
+    | undefined;
+  // 小款式图只取最大的连通服装主体，排除分离的标题、成分说明和整页细框。
+  // 只供风险/耗料两处缩略图使用，原裁图及 CAD 图不变。
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start]) continue;
+    let head = 0,
+      tail = 1;
+    queue[0] = start;
+    mask[start] = 0;
+    let left = start % scan.width,
+      right = left,
+      top = Math.floor(start / scan.width),
+      bottom = top;
+    while (head < tail) {
+      const index = queue[head++],
+        x = index % scan.width,
+        y = Math.floor(index / scan.width);
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+      for (const next of [
+        x > 0 ? index - 1 : -1,
+        x + 1 < scan.width ? index + 1 : -1,
+        y > 0 ? index - scan.width : -1,
+        y + 1 < scan.height ? index + scan.width : -1,
+      ]) {
+        if (next >= 0 && mask[next]) {
+          mask[next] = 0;
+          queue[tail++] = next;
+        }
+      }
+    }
+    const frame =
+      right - left >= scan.width * 0.95 &&
+      bottom - top >= scan.height * 0.95 &&
+      tail < (right - left + 1) * (bottom - top + 1) * 0.1;
+    if (!frame && (!best || tail > best.count))
+      best = { left, top, right, bottom, count: tail };
+  }
+  if (!best) return source.toDataURL("image/png");
+  const ratio = source.width / scan.width;
+  const left = Math.max(0, (best.left - 2) * ratio),
+    top = Math.max(0, (best.top - 2) * ratio);
+  const width = Math.min(
+    source.width - left,
+    (best.right - best.left + 5) * ratio,
+  );
+  const height = Math.min(
+    source.height - top,
+    (best.bottom - best.top + 5) * ratio,
+  );
+  const thumbnail = document.createElement("canvas");
+  thumbnail.width = Math.max(1, Math.round(width));
+  thumbnail.height = Math.max(1, Math.round(height));
+  thumbnail
+    .getContext("2d")!
+    .drawImage(
+      source,
+      left,
+      top,
+      width,
+      height,
+      0,
+      0,
+      thumbnail.width,
+      thumbnail.height,
+    );
+  return thumbnail.toDataURL("image/png");
 }

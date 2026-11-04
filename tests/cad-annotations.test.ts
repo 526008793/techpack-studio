@@ -6,6 +6,7 @@ import {
   placeAnnotations,
   validBox,
   wrapAnnotation,
+  annotationDisplay,
 } from "../src/shared/cad-annotations";
 
 const figure = (): Figure =>
@@ -82,4 +83,59 @@ test("wrapping retains dimensions and units", () => {
   assert.equal(lines.join(""), text);
   assert.ok(lines.some((s) => s.includes("1/4英寸")));
   assert.ok(lines.every((s) => [...s].length * 20 <= 100));
+});
+
+test("a translated label expands a short suggested box and keeps all characters", () => {
+  const f = figure();
+  f.annotations[0].labelBox!.height = 0.001;
+  const result = placeAnnotations(f, 1600, 1100, measure, () => false);
+  assert.equal(result.annotations.length, 1);
+  assert.equal(result.annotations[0].sourceIndex, 0);
+  assert.equal(
+    result.annotations[0].textZh.replace(/\s/g, ""),
+    f.annotations[0].textZh,
+  );
+  assert.ok(result.annotations[0].box.height > 0.001 / f.box.height);
+});
+
+test("fractional font widths do not cause an extra line at a floating-point boundary", () => {
+  const lines = wrapAnnotation(
+    "中文工艺",
+    60.3 - 1e-10,
+    (s) => s.length * 20.1,
+  );
+  assert.deepEqual(lines, ["中文工", "艺"]);
+});
+
+test("duplicate English labels and incomplete translations have distinct display states", () => {
+  const f = figure();
+  f.annotations.push({
+    ...f.annotations[0],
+    sourceBox: { x: 0.5, y: 0.5, width: 0.12, height: 0.02 },
+  });
+  const placed = placeAnnotations(
+    f,
+    1600,
+    1100,
+    measure,
+    () => false,
+  ).annotations;
+  assert.equal(placed.length, 2);
+  assert.deepEqual(
+    annotationDisplay(f, placed).map((a) => a.status),
+    ["placed", "placed"],
+  );
+  assert.deepEqual(
+    annotationDisplay(f, placed.slice(0, 1)).map((a) => a.status),
+    ["placed", "unplaced"],
+  );
+  assert.deepEqual(
+    annotationDisplay(
+      f,
+      placed.map((a) => ({ ...a, textZh: "面料" })),
+    ).map((a) => a.status),
+    ["unplaced", "unplaced"],
+  );
+  f.annotations[0].textZh = "";
+  assert.equal(annotationDisplay(f, placed)[0].status, "untranslated");
 });

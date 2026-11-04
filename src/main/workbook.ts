@@ -1520,7 +1520,13 @@ export async function generateWorkbook(
     book.style(coverStyle, { size: 10 }),
   );
   if (figure("appearance")[0])
-    await cover.picture(figure("appearance")[0].data, "F5", 120, 300);
+    await cover.picture(
+      figure("appearance")[0].data,
+      "F5",
+      120,
+      300,
+      figure("appearance")[0].annotations,
+    );
   sheets.push(cover.print("A1:G39"));
 
   // 总计下方的客户说明保留原文、合并、样式和行高，旧款图片继续清除。
@@ -1649,7 +1655,13 @@ export async function generateWorkbook(
   bom.height(4, fittedHeight([description], [bom.width(2)], 12, 60));
   bom.set("C2", null);
   if (figure("appearance")[0])
-    await bom.picture(figure("appearance")[0].data, "C2", 110, 165);
+    await bom.picture(
+      figure("appearance")[0].data,
+      "C2",
+      110,
+      165,
+      figure("appearance")[0].annotations,
+    );
   const headers = [
     "面料名称",
     "规格",
@@ -1816,7 +1828,12 @@ export async function generateWorkbook(
   const opinionRow = fabrics.length + 7;
   risk.merge(`A6:C${opinionRow - 1}`);
   if (figure("appearance")[0])
-    await risk.picture(figure("appearance")[0].data, "B6", 120, 180);
+    await risk.picture(
+      figure("appearance")[0].thumbnailData || figure("appearance")[0].data,
+      "B6",
+      120,
+      145,
+    );
   risk.merged(
     `A${opinionRow}:G${opinionRow}`,
     originalOpinion || RISK_OPINION,
@@ -1902,7 +1919,12 @@ export async function generateWorkbook(
     );
   });
   if (figure("appearance")[0])
-    await cons.picture(figure("appearance")[0].data, "B6", 58, 125);
+    await cons.picture(
+      figure("appearance")[0].thumbnailData || figure("appearance")[0].data,
+      "B6",
+      58,
+      125,
+    );
   const consLast = fabrics.length + 7;
   cons.merged(
     `A${consLast}:L${consLast}`,
@@ -2644,10 +2666,10 @@ export async function generateTemplateWorkbook(
           const column = table.columns.find((c) => c.field === "image");
           if (column)
             await sh.picture(
-              image.data,
+              image.thumbnailData || image.data,
               `${colName(column.col)}${table.row + 1}`,
               Math.max(20, sh.width(column.col) - 8),
-              140,
+              125,
             );
         }
       }
@@ -2691,6 +2713,9 @@ export async function generateTemplateWorkbook(
         );
       const imageColumn = tables[0]?.columns.find((c) => c.field === "image");
       const address =
+        (role === "risk" && mergedSlot
+          ? `${colName(Math.min(mergedSlot.start.col + 1, mergedSlot.end.col))}${mergedSlot.start.row}`
+          : undefined) ||
         pictureCell?.address ||
         originalSlot?.address ||
         (mergedSlot
@@ -2711,13 +2736,22 @@ export async function generateTemplateWorkbook(
               ).reduce((a, b) => a + b, 0) - 8
             : role === "cover"
               ? 300
-              : 140;
+              : role === "risk"
+                ? 145
+                : 140;
         await sh.picture(
-          image.data,
+          role === "risk" ? image.thumbnailData || image.data : image.data,
           address,
           originalSlot?.width ||
-            (role === "cover" ? 150 : role === "materials" ? 110 : 80),
+            (role === "cover"
+              ? 150
+              : role === "materials"
+                ? 110
+                : role === "risk"
+                  ? 120
+                  : 80),
           Math.max(20, originalSlot?.height || availableHeight),
+          role === "risk" ? undefined : image.annotations,
         );
       }
     }

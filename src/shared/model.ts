@@ -115,6 +115,8 @@ export type PlacedAnnotation = {
   textEn: string;
   box: Box;
   fontSize: number;
+  sourceIndex?: number;
+  placement?: "nearby" | "side";
 };
 export type ApiSettings = {
   protocol: "responses" | "chat";
@@ -144,6 +146,7 @@ export type FigureImage = {
   annotations?: PlacedAnnotation[];
   annotationWarnings?: string[];
   unplacedAnnotations?: { textZh: string; textEn: string }[];
+  thumbnailData?: string;
 };
 export type SelectedFile = {
   id: string;

@@ -35,7 +35,7 @@ export function wrapAnnotation(
         /\d+(?:[./]\d+)*(?:英寸|厘米|mm|cm|inches|inch|")?|[A-Za-z]+|\s+|./gu,
       ) || [];
     for (const token of tokens) {
-      if (line && measure(line + token) > width) {
+      if (line && measure(line + token) > width + 0.01) {
         lines.push(line);
         line = "";
       }
@@ -62,7 +62,7 @@ export function placeAnnotations(
   const sources = figure.annotations.map((a) => local(a.sourceBox));
   const annotations: PlacedAnnotation[] = [],
     warnings: string[] = [];
-  const fontSize = Math.max(18, width / 65),
+  const defaultFontSize = Math.max(18, width / 65),
     gapX = 6 / width,
     gapY = 6 / height;
   // 先给较短标注预留位置，避免长工艺段落占满面料编号旁的空白。
@@ -78,142 +78,172 @@ export function placeAnnotations(
       );
       continue;
     }
-    const candidates: Box[] = [];
-    if (annotation.labelBox) candidates.push(local(annotation.labelBox));
-    const widths = [
-      ...new Set([Math.max(source.width, 0.15), 0.23, 0.32, 0.42, 0.1, 0.075]),
-    ];
-    for (const w of widths) {
-      const lines = wrapAnnotation(annotation.textZh, w * width - 4, (s) =>
-        measure(s, fontSize),
-      );
-      const h = (lines.length * fontSize * 1.25 + 4) / height;
-      // 先下方/上方，再左右侧；候选位置始终围绕对应英文，避免移到图的另一端。
-      for (const x of [
-        source.x,
-        source.x + source.width - w,
-        source.x + 0.06,
-        source.x + 0.12,
-        source.x - 0.06,
-        source.x - 0.12,
-      ]) {
-        for (const delta of [0, 0.012, 0.03, 0.06, 0.09]) {
+    let placed = false;
+    // 长段落先保留正常字号，再小幅缩小重排，不能因模型给的框偏矮直接丢弃。
+    for (const fontSize of [
+      ...new Set([
+        defaultFontSize,
+        Math.max(18, defaultFontSize * 0.9),
+        Math.max(18, defaultFontSize * 0.8),
+      ]),
+    ]) {
+      const candidates: Box[] = [];
+      if (annotation.labelBox) candidates.push(local(annotation.labelBox));
+      const widths = [
+        ...new Set([
+          Math.max(source.width, 0.15),
+          0.23,
+          0.32,
+          0.42,
+          0.1,
+          0.075,
+        ]),
+      ];
+      for (const w of widths) {
+        const lines = wrapAnnotation(annotation.textZh, w * width - 4, (s) =>
+          measure(s, fontSize),
+        );
+        const h = (lines.length * fontSize * 1.25 + 4) / height;
+        // 先下方/上方，再左右侧；候选位置始终围绕对应英文，避免移到图的另一端。
+        const xPositions = [
+          source.x,
+          source.x + source.width - w,
+          source.x + 0.06,
+          source.x + 0.12,
+          source.x - 0.06,
+          source.x - 0.12,
+        ];
+        // 长文本和窄空白需要按实际像素搜索，固定几个横向偏移会漏掉可用位置。
+        for (
+          let x = Math.max(0, source.x - 0.1);
+          x <= Math.min(1 - w, source.x + source.width + 0.1);
+          x += Math.max(8, fontSize / 2) / width
+        )
+          xPositions.push(x);
+        for (const x of xPositions) {
+          for (const delta of [0, 0.012, 0.03, 0.06, 0.09]) {
+            candidates.push({
+              x,
+              y: source.y + source.height + gapY + delta,
+              width: w,
+              height: h,
+            });
+            candidates.push({
+              x,
+              y: source.y - gapY - h - delta,
+              width: w,
+              height: h,
+            });
+          }
+        }
+        for (const y of [source.y, source.y + source.height - h]) {
           candidates.push({
-            x,
-            y: source.y + source.height + gapY + delta,
+            x: source.x + source.width + gapX,
+            y,
             width: w,
             height: h,
           });
-          candidates.push({
-            x,
-            y: source.y - gapY - h - delta,
-            width: w,
-            height: h,
-          });
+          candidates.push({ x: source.x - w - gapX, y, width: w, height: h });
         }
       }
-      for (const y of [source.y, source.y + source.height - h]) {
-        candidates.push({
-          x: source.x + source.width + gapX,
-          y,
-          width: w,
-          height: h,
+      const distance = (a: Box, b: Box) =>
+        Math.hypot(
+          Math.max(0, a.x - b.x - b.width, b.x - a.x - a.width) * width,
+          Math.max(0, a.y - b.y - b.height, b.y - a.y - a.height) * height,
+        );
+      // 占位只按文字实际尺寸计算，短编号不会占满模型给出的整块留白。
+      const fit = (box: Box): Box => {
+        const lines = wrapAnnotation(
+          annotation.textZh,
+          box.width * width - 4,
+          (s) => measure(s, fontSize),
+        );
+        const neededHeight = (lines.length * fontSize * 1.25 + 4) / height;
+        return {
+          ...box,
+          width:
+            (Math.ceil(
+              Math.max(...lines.map((line) => measure(line, fontSize))),
+            ) +
+              4) /
+            width,
+          height: neededHeight,
+        };
+      };
+      const preferred = annotation.labelBox
+        ? fit(candidates.shift()!)
+        : undefined;
+      for (let i = 0; i < candidates.length; i++)
+        candidates[i] = fit(candidates[i]);
+      const score = (box: Box) =>
+        distance(box, source) + box.height * height * 0.64;
+      candidates.sort((a, b) => score(a) - score(b));
+      if (preferred) candidates.unshift(preferred);
+      const box = candidates.find((candidate) => {
+        if (!validBox(candidate)) return false;
+        const dx = Math.max(
+          0,
+          candidate.x - source.x - source.width,
+          source.x - candidate.x - candidate.width,
+        );
+        const dy = Math.max(
+          0,
+          candidate.y - source.y - source.height,
+          source.y - candidate.y - candidate.height,
+        );
+        if (dx > 0.1 || dy > 0.1) return false;
+        if (
+          annotation.textZh.length <= 16 &&
+          sources.some(
+            (other, otherIndex) =>
+              otherIndex !== index &&
+              distance(candidate, source) >
+                distance(candidate, other) + fontSize * 0.8,
+          )
+        )
+          return false;
+        if (
+          sources.some((s) =>
+            overlaps(candidate, s, Math.min(gapX, gapY) / 2),
+          ) ||
+          annotations.some((a) =>
+            overlaps(candidate, a.box, Math.min(gapX, gapY)),
+          ) ||
+          hasInk(candidate)
+        )
+          return false;
+        const lines = wrapAnnotation(
+          annotation.textZh,
+          candidate.width * width - 4,
+          (s) => measure(s, fontSize),
+        );
+        return (
+          lines.length * fontSize * 1.25 + 4 <=
+            candidate.height * height + 0.01 &&
+          lines.every(
+            (line) =>
+              measure(line, fontSize) <= candidate.width * width - 4 + 0.01,
+          )
+        );
+      });
+      if (box) {
+        const lines = wrapAnnotation(
+          annotation.textZh,
+          box.width * width - 4,
+          (s) => measure(s, fontSize),
+        );
+        annotations.push({
+          textZh: lines.join("\n"),
+          textEn: annotation.textEn,
+          box,
+          fontSize,
+          sourceIndex: index,
         });
-        candidates.push({ x: source.x - w - gapX, y, width: w, height: h });
+        placed = true;
+        break;
       }
     }
-    const distance = (a: Box, b: Box) =>
-      Math.hypot(
-        Math.max(0, a.x - b.x - b.width, b.x - a.x - a.width) * width,
-        Math.max(0, a.y - b.y - b.height, b.y - a.y - a.height) * height,
-      );
-    // 占位只按文字实际尺寸计算，短编号不会占满模型给出的整块留白。
-    const fit = (box: Box): Box => {
-      const lines = wrapAnnotation(
-        annotation.textZh,
-        box.width * width - 4,
-        (s) => measure(s, fontSize),
-      );
-      const neededHeight = (lines.length * fontSize * 1.25 + 4) / height;
-      if (neededHeight > box.height + 0.01 / height) return box;
-      return {
-        ...box,
-        width:
-          (Math.max(...lines.map((line) => measure(line, fontSize))) + 4) /
-          width,
-        height: neededHeight,
-      };
-    };
-    const preferred = annotation.labelBox
-      ? fit(candidates.shift()!)
-      : undefined;
-    for (let i = 0; i < candidates.length; i++)
-      candidates[i] = fit(candidates[i]);
-    const score = (box: Box) =>
-      distance(box, source) +
-      wrapAnnotation(annotation.textZh, box.width * width - 4, (s) =>
-        measure(s, fontSize),
-      ).length *
-        fontSize *
-        0.8;
-    candidates.sort((a, b) => score(a) - score(b));
-    if (preferred) candidates.unshift(preferred);
-    const box = candidates.find((candidate) => {
-      if (!validBox(candidate)) return false;
-      const dx = Math.max(
-        0,
-        candidate.x - source.x - source.width,
-        source.x - candidate.x - candidate.width,
-      );
-      const dy = Math.max(
-        0,
-        candidate.y - source.y - source.height,
-        source.y - candidate.y - candidate.height,
-      );
-      if (dx > 0.1 || dy > 0.1) return false;
-      if (
-        annotation.textZh.length <= 16 &&
-        sources.some(
-          (other, otherIndex) =>
-            otherIndex !== index &&
-            distance(candidate, source) >
-              distance(candidate, other) + fontSize * 0.8,
-        )
-      )
-        return false;
-      const lines = wrapAnnotation(
-        annotation.textZh,
-        candidate.width * width - 4,
-        (s) => measure(s, fontSize),
-      );
-      return (
-        lines.length * fontSize * 1.25 + 4 <=
-          candidate.height * height + 0.01 &&
-        lines.every(
-          (line) => measure(line, fontSize) <= candidate.width * width - 4,
-        ) &&
-        !sources.some((s) =>
-          overlaps(candidate, s, Math.min(gapX, gapY) / 2),
-        ) &&
-        !annotations.some((a) =>
-          overlaps(candidate, a.box, Math.min(gapX, gapY)),
-        ) &&
-        !hasInk(candidate)
-      );
-    });
-    if (box) {
-      const lines = wrapAnnotation(
-        annotation.textZh,
-        box.width * width - 4,
-        (s) => measure(s, fontSize),
-      );
-      annotations.push({
-        textZh: lines.join("\n"),
-        textEn: annotation.textEn,
-        box,
-        fontSize,
-      });
-    } else {
+    if (!placed) {
       warnings.push(
         `第${figure.page}页「${annotation.textEn}」附近空间不足，中文未能放到图上，请调整裁剪或在 Excel 中补充标注。`,
       );
@@ -236,4 +266,23 @@ export function annotationWarnings(figures: FigureImage[]): string[] {
       "工艺图没有可定位的中文标注；旧资料请重新识别以获取图中标注位置，也可在 Excel 中手工添加。",
     );
   return [...new Set(warnings)];
+}
+
+export function annotationDisplay(
+  figure: Figure,
+  placed: PlacedAnnotation[] = [],
+) {
+  return figure.annotations.map((annotation, index) => {
+    // 用来源序号和完整文字核对，重复英文在不同位置也必须分别上图。
+    const match = placed.find((item) => item.sourceIndex === index);
+    const status = !annotation.textZh.trim()
+      ? "untranslated"
+      : match &&
+          match.textEn === annotation.textEn &&
+          match.textZh.replace(/\s/g, "") ===
+            annotation.textZh.replace(/\s/g, "")
+        ? "placed"
+        : "unplaced";
+    return { ...annotation, index, status };
+  });
 }

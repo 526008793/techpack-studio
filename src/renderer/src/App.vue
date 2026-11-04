@@ -15,6 +15,7 @@ import {
   type CacheSettings,
 } from "../../shared/model";
 import { readPdf, previewFigure, exportFigures, parseDimension } from "./pdf";
+import { annotationDisplay } from "../../shared/cad-annotations";
 import brandIconUrl from "../../../build/icon.png?url";
 import { version as appVersion } from "../../../package.json";
 
@@ -53,7 +54,21 @@ const settings = ref<ApiSettings>({
   reasoningEffort: "xhigh",
   rememberKey: true,
 });
-const figurePreviews = ref<string[]>([]);
+const figurePreviews = ref<Awaited<ReturnType<typeof previewFigure>>[]>([]);
+const previewBusy = ref(false);
+const annotationReports = computed(() =>
+  data.value.figures.map((figure, index) => {
+    const items = annotationDisplay(
+      figure,
+      figurePreviews.value[index]?.figure?.annotations,
+    );
+    return {
+      items,
+      translated: items.filter((item) => item.status !== "untranslated").length,
+      placed: items.filter((item) => item.status === "placed").length,
+    };
+  }),
+);
 const steps = ["导入资料", "核对中英内容", "导出制单"];
 const tabs = [
   ["meta", "款式资料"],
@@ -314,12 +329,16 @@ function setBox(index: number, key: keyof Figure["box"], event: Event) {
 }
 async function updatePreviews() {
   const version = ++previewVersion;
+  previewBusy.value = true;
   const images = await Promise.all(
     data.value.figures.map((f) =>
-      previewFigure(f, pages.value).catch(() => ""),
+      previewFigure(f, pages.value).catch(() => ({ image: "", figure: null })),
     ),
   );
-  if (version === previewVersion) figurePreviews.value = images;
+  if (version === previewVersion) {
+    figurePreviews.value = images;
+    previewBusy.value = false;
+  }
 }
 watch(
   () => data.value.figures,
@@ -332,16 +351,17 @@ async function exportWorkbook() {
     busy.value = true;
     try {
       status.value = "正在准备图片和制单…";
-      const figures = await exportFigures(data.value.figures, pages.value);
+      const document = jsonData();
+      const figures = await exportFigures(document.figures, pages.value);
       const output = await api.export({
-        data: jsonData(),
+        data: document,
         templateId: template.value?.id || null,
         figures,
       });
       if (output) {
         result.value = output;
         step.value = 3;
-        notice.value = "Excel 已生成，可以用 Excel 或 WPS 打开。";
+        notice.value = "Excel 已生成，可在 Excel 或 WPS 中继续修改。";
       }
     } finally {
       busy.value = false;
@@ -978,8 +998,8 @@ onUnmounted(() => removeProgress?.());
                 >
                   <div class="figure-image">
                     <img
-                      v-if="figurePreviews[index]"
-                      :src="figurePreviews[index]"
+                      v-if="figurePreviews[index]?.image"
+                      :src="figurePreviews[index].image"
                       :alt="roleNames[item.role]"
                     />
                   </div>
@@ -1043,16 +1063,68 @@ onUnmounted(() => removeProgress?.());
                   <details
                     v-if="item.annotations.length"
                     class="annotation-editor"
+                    :open="
+                      !previewBusy &&
+                      annotationReports[index].placed < item.annotations.length
+                    "
                   >
                     <summary>
-                      图中中文标注 ·
-                      {{ item.annotations.length }} 条（可修改译文）
+                      <template v-if="previewBusy">正在检查标注排版…</template>
+                      <template v-else>
+                        图中标注 {{ item.annotations.length }} 条 · 已翻译
+                        {{ annotationReports[index].translated }} 条 · 已上图
+                        {{ annotationReports[index].placed }} 条
+                      </template>
                     </summary>
+                    <p
+                      v-if="
+                        figurePreviews[index]?.figure?.annotations?.some(
+                          (annotation) => annotation.placement === 'side',
+                        )
+                      "
+                      class="inline-note"
+                    >
+                      原图附近空白不足的译文已放入图片右侧译文区，并保留对应英文；可放大图片逐条核对。
+                    </p>
+                    <p
+                      v-if="
+                        !previewBusy &&
+                        annotationReports[index].placed <
+                          item.annotations.length
+                      "
+                      class="annotation-warning"
+                      role="alert"
+                    >
+                      尚有
+                      {{
+                        item.annotations.length -
+                        annotationReports[index].placed
+                      }}
+                      条未完成上图。可先生成文件，再到 Excel 或 WPS 中手工修改。
+                    </p>
                     <div
                       v-for="(annotation, annotationIndex) in item.annotations"
                       :key="annotationIndex"
                       class="annotation-row"
                     >
+                      <span
+                        v-if="!previewBusy"
+                        class="annotation-state"
+                        :class="
+                          annotationReports[index].items[annotationIndex].status
+                        "
+                      >
+                        {{
+                          {
+                            placed: "已上图",
+                            unplaced: "已翻译，未上图",
+                            untranslated: "缺少中文译文",
+                          }[
+                            annotationReports[index].items[annotationIndex]
+                              .status
+                          ]
+                        }}
+                      </span>
                       <label
                         >对应英文<textarea
                           v-model="annotation.textEn"
@@ -1073,6 +1145,9 @@ onUnmounted(() => removeProgress?.());
                       </button>
                     </div>
                   </details>
+                  <p v-else class="annotation-empty">
+                    此图没有已识别的文字标注，请对照原图确认是否需要补充。
+                  </p>
                 </div>
               </div>
             </section>
